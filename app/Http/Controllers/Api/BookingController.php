@@ -79,7 +79,7 @@ class BookingController extends Controller
         // Validasi bank untuk BANK_TRANSFER
         if ($paymentType === 'BANK_TRANSFER' && !$bank) {
             return response()->json([
-                'status' => false, 
+                'status' => false,
                 'message' => 'Bank is required for bank transfer payment'
             ], 400);
         }
@@ -93,7 +93,7 @@ class BookingController extends Controller
             }
 
             // Calculate payment amount based on type
-            $totalPembayaran = $request->jenis_pembayaran === 'dp' 
+            $totalPembayaran = $request->jenis_pembayaran === 'dp'
                 ? $totalHarga * 0.5  // DP 50%
                 : $totalHarga;       // Lunas 100%
 
@@ -124,10 +124,10 @@ class BookingController extends Controller
 
             // Proses pembayaran menggunakan CoreApi
             $paymentGatewayResponse = $this->processPayment(
-                $paymentType, 
-                $totalPembayaran, 
-                $orderId, 
-                $bank, 
+                $paymentType,
+                $totalPembayaran,
+                $orderId,
+                $bank,
                 $user,
                 $request->items
             );
@@ -245,15 +245,15 @@ class BookingController extends Controller
                     'bank' => strtolower($bank)
                 ];
                 break;
-                
+
             case 'QRIS':
                 $transaction_data['payment_type'] = 'qris';
                 break;
-                
+
             case 'GOPAY':
                 $transaction_data['payment_type'] = 'gopay';
                 break;
-                
+
             default:
                 $transaction_data['payment_type'] = 'bank_transfer';
                 break;
@@ -311,7 +311,10 @@ class BookingController extends Controller
     public function history()
 {
     try {
-        $bookings = Booking::with(['details.layanan', 'pembayaran'])
+        $bookings = Booking::with([
+                'details.layanan',
+                'pembayaran'
+            ])
             ->where('user_id', Auth::id())
             ->orderBy('created_at', 'desc')
             ->get();
@@ -322,30 +325,49 @@ class BookingController extends Controller
             return [
                 'booking_id' => $booking->id,
                 'order_id' => $booking->order_id,
-                'total_harga' => (float)$booking->total_harga,
-                'total_pembayaran' => (float)$booking->total_pembayaran,
+                'total_harga' => (float) $booking->total_harga,
+                'total_pembayaran' => (float) $booking->total_pembayaran,
                 'jenis_pembayaran' => $booking->jenis_pembayaran,
 
-                // sama seperti createBooking()
+                // ===== BOOKING =====
                 'booking' => [
                     'order_id' => $booking->order_id,
                     'user_id' => $booking->user_id,
                     'tanggal_booking' => $booking->tanggal_booking,
                     'jam_booking' => $booking->jam_booking,
                     'status' => $booking->status,
-                    'total_harga' => $booking->total_harga,
+                    'total_harga' => (float) $booking->total_harga,
                     'jenis_pembayaran' => $booking->jenis_pembayaran,
-                    'total_pembayaran' => $booking->total_pembayaran,
-                    'updated_at' => $booking->updated_at,
+                    'total_pembayaran' => (float) $booking->total_pembayaran,
                     'created_at' => $booking->created_at,
+                    'updated_at' => $booking->updated_at,
                     'id' => $booking->id,
                 ],
 
-                // sama seperti createBooking()
+                // ===== DETAILS + LAYANAN =====
+                'details' => $booking->details->map(function ($detail) {
+                    return [
+                        'id' => $detail->id,
+                        'harga' => (float) $detail->harga,
+                        'qty' => $detail->qty,
+                        'subtotal' => (float) $detail->subtotal,
+
+                        'layanan' => $detail->layanan ? [
+                            'id' => $detail->layanan->id,
+                            'nama' => $detail->layanan->nama,
+                            'deskripsi' => $detail->layanan->deskripsi,
+                            'harga' => (float) $detail->layanan->harga,
+                            'estimasi_menit' => $detail->layanan->estimasi_menit,
+                            'image' => $detail->layanan->image,
+                        ] : null,
+                    ];
+                }),
+
+                // ===== PAYMENT =====
                 'payment' => $payment ? [
                     'booking_id' => $payment->booking_id,
                     'order_id' => $payment->order_id,
-                    'gross_amount' => $payment->gross_amount,
+                    'gross_amount' => (float) $payment->gross_amount,
                     'transaction_status' => $payment->transaction_status,
                     'payment_type' => $payment->payment_type,
                     'payment_gateway' => $payment->payment_gateway,
@@ -356,8 +378,8 @@ class BookingController extends Controller
                     'va_number' => $payment->va_number,
                     'qr_url' => $payment->qr_url,
                     'deeplink_url' => $payment->deeplink_url,
-                    'updated_at' => $payment->updated_at,
                     'created_at' => $payment->created_at,
+                    'updated_at' => $payment->updated_at,
                     'id' => $payment->id,
                     'is_paid' => $payment->is_paid ?? false,
                     'is_expired' => $payment->is_expired ?? false,
@@ -379,6 +401,8 @@ class BookingController extends Controller
         ], 500);
     }
 }
+
+
 
     /**
      * Get booking detail
@@ -450,7 +474,7 @@ class BookingController extends Controller
             // Ambil raw input dari request
             $serverKey = env('MIDTRANS_SERVER_KEY');
             $hashed = hash("sha512", $request->order_id . $request->status_code . $request->gross_amount . $serverKey);
-            
+
             // Verifikasi signature untuk keamanan
             if ($hashed !== $request->signature_key) {
                 Log::warning('Invalid signature key for booking callback', [
@@ -458,7 +482,7 @@ class BookingController extends Controller
                     'signature_received' => $request->signature_key,
                     'signature_calculated' => $hashed
                 ]);
-                
+
                 return response()->json([
                     'status' => false,
                     'message' => 'Invalid signature'
@@ -467,7 +491,7 @@ class BookingController extends Controller
 
             // Cari booking berdasarkan order_id
             $booking = Booking::where('order_id', $request->order_id)->first();
-            
+
             if (!$booking) {
                 Log::error('Booking not found for callback', ['order_id' => $request->order_id]);
                 return response()->json([
@@ -478,7 +502,7 @@ class BookingController extends Controller
 
             // Ambil payment record terkait
             $pembayaran = $booking->pembayaran;
-            
+
             if (!$pembayaran) {
                 Log::error('Payment record not found for booking', ['order_id' => $request->order_id]);
                 return response()->json([
@@ -490,7 +514,7 @@ class BookingController extends Controller
             // Tentukan status berdasarkan transaction_status dari Midtrans
             $transactionStatus = $request->transaction_status;
             $fraudStatus = $request->fraud_status ?? null;
-            
+
             Log::info('Booking callback received', [
                 'order_id' => $request->order_id,
                 'transaction_status' => $transactionStatus,
@@ -508,39 +532,39 @@ class BookingController extends Controller
                         $this->updateBookingStatus($booking, $pembayaran, 'success', $request);
                     }
                     break;
-                    
+
                 case 'settlement':
                     $this->updateBookingStatus($booking, $pembayaran, 'success', $request);
                     break;
-                    
+
                 case 'pending':
                     $this->updateBookingStatus($booking, $pembayaran, 'pending', $request);
                     break;
-                    
+
                 case 'deny':
                     $this->updateBookingStatus($booking, $pembayaran, 'failed', $request);
                     break;
-                    
+
                 case 'expire':
                     $this->updateBookingStatus($booking, $pembayaran, 'expired', $request);
                     break;
-                    
+
                 case 'cancel':
                     $this->updateBookingStatus($booking, $pembayaran, 'cancelled', $request);
                     break;
-                    
+
                 case 'refund':
                     $this->updateBookingStatus($booking, $pembayaran, 'refunded', $request);
                     break;
-                    
+
                 case 'partial_refund':
                     $this->updateBookingStatus($booking, $pembayaran, 'partial_refunded', $request);
                     break;
-                    
+
                 case 'failure':
                     $this->updateBookingStatus($booking, $pembayaran, 'failed', $request);
                     break;
-                    
+
                 default:
                     Log::warning('Unknown transaction status for booking', [
                         'order_id' => $request->order_id,
@@ -560,7 +584,7 @@ class BookingController extends Controller
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            
+
             return response()->json([
                 'status' => false,
                 'message' => 'Callback processing failed'
@@ -645,7 +669,7 @@ class BookingController extends Controller
             // Cari reference berdasarkan order_id di notifications/bookings
             $bookingsRef = $this->firebaseDatabase->getReference('notifications/bookings');
             $snapshot = $bookingsRef->orderByChild('order_id')->equalTo($orderId)->getSnapshot();
-            
+
             if ($snapshot->exists()) {
                 foreach ($snapshot->getValue() as $key => $value) {
                     // Update record yang sudah ada di notifications/bookings
@@ -656,13 +680,13 @@ class BookingController extends Controller
                             'updated_at' => Carbon::now()->timestamp,
                             'payment_date' => $status === 'confirmed' ? Carbon::now()->timestamp : null
                         ]);
-                    
+
                     Log::info('Firebase notification/bookings updated', [
                         'firebase_key' => $key,
                         'order_id' => $orderId,
                         'status' => $status
                     ]);
-                    
+
                     break; // Hanya update yang pertama ditemukan
                 }
             } else {
@@ -685,8 +709,8 @@ class BookingController extends Controller
     private function handleSuccessfulPayment($booking)
     {
         try {
-           
-            
+
+
             Log::info('Booking payment successful', [
                 'order_id' => $booking->order_id,
                 'booking_id' => $booking->id,
@@ -695,7 +719,7 @@ class BookingController extends Controller
                 'jenis_pembayaran' => $booking->jenis_pembayaran
             ]);
 
-           
+
 
         } catch (\Exception $e) {
             Log::error('Failed to handle successful booking payment: ' . $e->getMessage(), [
@@ -713,7 +737,7 @@ class BookingController extends Controller
             $booking = Booking::where('order_id', $orderId)
                 ->with(['pembayaran', 'details.layanan'])
                 ->first();
-            
+
             if (!$booking) {
                 return response()->json([
                     'status' => false,
