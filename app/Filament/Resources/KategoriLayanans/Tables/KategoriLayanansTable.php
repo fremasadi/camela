@@ -15,6 +15,7 @@ class KategoriLayanansTable
         return $table
             ->columns([
                 TextColumn::make('name')
+                    ->label('Nama Kategori Layanan')
                     ->searchable(),
                 TextColumn::make('created_at')
                     ->dateTime()

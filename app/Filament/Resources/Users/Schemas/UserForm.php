@@ -14,19 +14,22 @@ class UserForm
         return $schema
             ->components([
                 TextInput::make('name')
+                    ->label('Nama')
                     ->required(),
                 TextInput::make('email')
-                    ->label('Email address')
+                    ->label('Email')
                     ->email()
                     ->required(),
-                DateTimePicker::make('email_verified_at'),
+                // DateTimePicker::make('email_verified_at'),
                 TextInput::make('password')
                     ->password()
                     ->required(),
                 TextInput::make('no_telp')
+                    ->label('Nomer Telefon')
                     ->tel()
                     ->default(null),
                 Select::make('role')
+                    ->label('Peran')
                     ->options(['admin' => 'Admin', 'customer' => 'Customer'])
                     ->default('customer')
                     ->required(),

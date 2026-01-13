@@ -18,6 +18,8 @@ use Filament\Tables\Table;
 class BookingResource extends Resource
 {
     protected static ?string $model = Booking::class;
+    protected static bool $shouldRegisterNavigation = false;
+
 
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-clipboard-document-check';
     protected static UnitEnum|string|null $navigationGroup = 'Booking';

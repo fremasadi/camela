@@ -12,6 +12,7 @@ class KategoriLayananForm
         return $schema
             ->components([
                 TextInput::make('name')
+                    ->label('Nama Kategori Layanan')
                     ->required(),
             ]);
     }

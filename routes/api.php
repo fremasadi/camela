@@ -33,6 +33,7 @@ Route::middleware('auth:sanctum')
     Route::get('/', [LayananController::class, 'index']);
     Route::get('/{id}', [LayananController::class, 'show']);
 });
+
 // 🔹 BOOKING ROUTES
 Route::middleware('auth:sanctum')
     ->prefix('bookings')

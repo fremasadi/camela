@@ -15,36 +15,36 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use UnitEnum;
 
-class PromoLayananResource extends Resource
-{
-    protected static ?string $model = PromoLayanan::class;
+// class PromoLayananResource extends Resource
+// {
+//     protected static ?string $model = PromoLayanan::class;
 
-protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-tag';
-    protected static UnitEnum|string|null $navigationGroup = 'Layanan & Jadwal';
-    protected static ?string $navigationLabel = 'Promo Layanan';
-    public static function form(Schema $schema): Schema
-    {
-        return PromoLayananForm::configure($schema);
-    }
+// protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-tag';
+//     protected static UnitEnum|string|null $navigationGroup = 'Layanan & Jadwal';
+//     protected static ?string $navigationLabel = 'Promo Layanan';
+//     public static function form(Schema $schema): Schema
+//     {
+//         return PromoLayananForm::configure($schema);
+//     }
 
-    public static function table(Table $table): Table
-    {
-        return PromoLayanansTable::configure($table);
-    }
+//     public static function table(Table $table): Table
+//     {
+//         return PromoLayanansTable::configure($table);
+//     }
 
-    public static function getRelations(): array
-    {
-        return [
-            //
-        ];
-    }
+//     public static function getRelations(): array
+//     {
+//         return [
+//             //
+//         ];
+//     }
 
-    public static function getPages(): array
-    {
-        return [
-            'index' => ListPromoLayanans::route('/'),
-            'create' => CreatePromoLayanan::route('/create'),
-            'edit' => EditPromoLayanan::route('/{record}/edit'),
-        ];
-    }
-}
+//     public static function getPages(): array
+//     {
+//         return [
+//             'index' => ListPromoLayanans::route('/'),
+//             'create' => CreatePromoLayanan::route('/create'),
+//             'edit' => EditPromoLayanan::route('/{record}/edit'),
+//         ];
+//     }
+// }

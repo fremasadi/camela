@@ -354,7 +354,7 @@ class BookingController extends Controller
 
                         'layanan' => $detail->layanan ? [
                             'id' => $detail->layanan->id,
-                            'nama' => $detail->layanan->nama,
+                            'name' => $detail->layanan->name,
                             'deskripsi' => $detail->layanan->deskripsi,
                             'harga' => (float) $detail->layanan->harga,
                             'estimasi_menit' => $detail->layanan->estimasi_menit,
