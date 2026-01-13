@@ -25,6 +25,7 @@ class BookingResource extends Resource
     protected static UnitEnum|string|null $navigationGroup = 'Booking';
     protected static ?string $navigationLabel = 'Daftar Booking';
 
+
     public static function form(Schema $schema): Schema
     {
         return BookingForm::configure($schema);
