@@ -16,14 +16,31 @@ class UserForm
                 TextInput::make('name')
                     ->label('Nama')
                     ->required(),
-                TextInput::make('email')
-                    ->label('Email')
+                    TextInput::make('email')
                     ->email()
-                    ->required(),
-                // DateTimePicker::make('email_verified_at'),
+                    ->required()
+                    ->unique(
+                        table: 'users',
+                        column: 'email',
+                        ignoreRecord: true
+                    ),
+
                 TextInput::make('password')
                     ->password()
-                    ->required(),
+                    ->label('Password')
+
+                    // Wajib hanya saat create
+                    ->required(fn ($livewire) =>
+                        $livewire instanceof \Filament\Resources\Pages\CreateRecord
+                    )
+
+                    // Hash otomatis kalau diisi
+                    ->dehydrateStateUsing(fn ($state) =>
+                        filled($state) ? bcrypt($state) : null
+                    )
+
+                    // Jangan update kalau kosong
+                    ->dehydrated(fn ($state) => filled($state)),
                 TextInput::make('no_telp')
                     ->label('Nomer Telefon')
                     ->tel()
