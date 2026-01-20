@@ -13,7 +13,6 @@ class EditLayanan extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
-            DeleteAction::make(),
         ];
     }
 
