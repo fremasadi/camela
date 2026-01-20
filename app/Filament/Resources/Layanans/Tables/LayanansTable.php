@@ -24,9 +24,11 @@ class LayanansTable
                 TextColumn::make('name')
                     ->searchable(),
                 TextColumn::make('harga')
+                    ->label('Harga(Rp)')
                     ->numeric()
                     ->sortable(),
                 TextColumn::make('estimasi_menit')
+                    ->label('Estimasi(menit)')
                     ->numeric()
                     ->sortable(),
                 TextColumn::make('created_at')
