@@ -22,7 +22,6 @@ class PromoLayananResource extends Resource
 protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-tag';
     protected static UnitEnum|string|null $navigationGroup = 'Layanan & Jadwal';
     protected static ?string $navigationLabel = 'Promo Layanan';
-    protected static bool $shouldRegisterNavigation = false;
 
 
     public static function form(Schema $schema): Schema

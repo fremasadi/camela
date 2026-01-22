@@ -16,4 +16,5 @@ class ListPromoLayanans extends ListRecords
             CreateAction::make(),
         ];
     }
+    
 }
