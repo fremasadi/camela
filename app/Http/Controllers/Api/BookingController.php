@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Booking;
 use App\Models\BookingDetail;
+use App\Models\Layanan;
+use App\Models\Pegawai;
 use App\Models\Pembayaran;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -32,6 +34,63 @@ class BookingController extends Controller
         Config::$isProduction = env('MIDTRANS_ENV') === 'production';
         Config::$isSanitized = true;
         Config::$is3ds = true;
+    }
+
+    /**
+     * Kembalikan daftar jam yang masih tersedia (ada minimal 1 pegawai kosong)
+     * GET /bookings/slot-tersedia?tanggal=2026-04-10&layanan_ids[]=1&layanan_ids[]=2
+     */
+    public function slotTersedia(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'tanggal'       => 'required|date|after_or_equal:today',
+            'layanan_ids'   => 'required|array|min:1',
+            'layanan_ids.*' => 'required|exists:layanans,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['status' => false, 'errors' => $validator->errors()], 422);
+        }
+
+        $totalMenit = Layanan::whereIn('id', $request->layanan_ids)->sum('estimasi_menit');
+
+        // Ambil jadwal operasional aktif (gunakan yang pertama)
+        $jadwal = \App\Models\JadwalOperasional::where('status', 'buka')->first();
+
+        if (!$jadwal) {
+            return response()->json(['status' => false, 'message' => 'Salon sedang tutup.'], 422);
+        }
+
+        $jamBuka   = Carbon::parse($request->tanggal . ' ' . $jadwal->jam_buka);
+        $jamTutup  = Carbon::parse($request->tanggal . ' ' . $jadwal->jam_tutup);
+        $interval  = 30; // slot per 30 menit
+
+        $slots = [];
+        $current = $jamBuka->copy();
+
+        while ($current->copy()->addMinutes($totalMenit)->lte($jamTutup)) {
+            $jamMulai  = $current->format('H:i');
+            $jamSelesai = $current->copy()->addMinutes($totalMenit)->format('H:i');
+
+            $adaPegawai = Pegawai::tersedia($request->tanggal, $jamMulai, $jamSelesai) !== null;
+
+            $slots[] = [
+                'jam_mulai'   => $jamMulai,
+                'jam_selesai' => $jamSelesai,
+                'tersedia'    => $adaPegawai,
+            ];
+
+            $current->addMinutes($interval);
+        }
+
+        return response()->json([
+            'status' => true,
+            'data'   => [
+                'tanggal'      => $request->tanggal,
+                'total_menit'  => $totalMenit,
+                'slots'        => $slots,
+            ]
+        ]);
     }
 
     private function generateOrderId()
@@ -84,6 +143,21 @@ class BookingController extends Controller
             ], 400);
         }
 
+        // Hitung jam_selesai berdasarkan total estimasi layanan
+        $layananIds = collect($request->items)->pluck('layanan_id');
+        $totalMenit  = Layanan::whereIn('id', $layananIds)->sum('estimasi_menit');
+        $jamSelesai  = Carbon::parse($request->jam_booking)->addMinutes($totalMenit)->format('H:i');
+
+        // Cari pegawai yang tersedia di jam tersebut
+        $pegawai = Pegawai::tersedia($request->tanggal_booking, $request->jam_booking, $jamSelesai);
+
+        if (!$pegawai) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Tidak ada pegawai yang tersedia di jam tersebut. Silakan pilih jam lain.',
+            ], 422);
+        }
+
         DB::beginTransaction();
         try {
             // Calculate total
@@ -101,15 +175,17 @@ class BookingController extends Controller
 
             // Create Booking
             $booking = Booking::create([
-                'order_id' => $orderId,
-                'user_id' => $user->id,
-                'tanggal_booking' => $request->tanggal_booking,
-                'jam_booking' => $request->jam_booking,
-                'status' => 'pending',
-                'total_harga' => $totalHarga,
+                'order_id'         => $orderId,
+                'user_id'          => $user->id,
+                'pegawai_id'       => $pegawai->id,
+                'tanggal_booking'  => $request->tanggal_booking,
+                'jam_booking'      => $request->jam_booking,
+                'jam_selesai'      => $jamSelesai,
+                'status'           => 'pending',
+                'total_harga'      => $totalHarga,
                 'jenis_pembayaran' => $request->jenis_pembayaran,
                 'total_pembayaran' => $totalPembayaran,
-                'payment_type' => $paymentType,
+                'payment_type'     => $paymentType,
             ]);
 
             // Create Booking Details

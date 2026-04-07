@@ -7,14 +7,17 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use App\Models\Pegawai;
 
 class Booking extends Model
 {
     protected $fillable = [
-            'order_id',
+        'order_id',
         'user_id',
+        'pegawai_id',
         'tanggal_booking',
         'jam_booking',
+        'jam_selesai',
         'status',
         'total_harga',
         'jenis_pembayaran',
@@ -30,6 +33,11 @@ class Booking extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function pegawai(): BelongsTo
+    {
+        return $this->belongsTo(Pegawai::class);
     }
 
     public function details(): HasMany

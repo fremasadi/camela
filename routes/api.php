@@ -39,6 +39,7 @@ Route::middleware('auth:sanctum')
     ->prefix('bookings')
     ->group(function () {
         Route::post('/', [BookingController::class, 'createBooking']);
+        Route::get('/slot-tersedia', [BookingController::class, 'slotTersedia']);
         Route::get('/history', [BookingController::class, 'history']);
         Route::get('/check-status/{bookingId}', [BookingController::class, 'checkPaymentStatus']);
         Route::get('/check/{orderId}', [BookingController::class, 'checkStatus']);
