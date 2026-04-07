@@ -52,7 +52,7 @@ class BookingController extends Controller
             return response()->json(['status' => false, 'errors' => $validator->errors()], 422);
         }
 
-        $totalMenit = Layanan::whereIn('id', $request->layanan_ids)->sum('estimasi_menit');
+        $totalMenit = (int) Layanan::whereIn('id', $request->layanan_ids)->sum('estimasi_menit');
 
         // Ambil jadwal operasional aktif (gunakan yang pertama)
         $jadwal = \App\Models\JadwalOperasional::where('status', 'buka')->first();
@@ -145,7 +145,7 @@ class BookingController extends Controller
 
         // Hitung jam_selesai berdasarkan total estimasi layanan
         $layananIds = collect($request->items)->pluck('layanan_id');
-        $totalMenit  = Layanan::whereIn('id', $layananIds)->sum('estimasi_menit');
+        $totalMenit  = (int) Layanan::whereIn('id', $layananIds)->sum('estimasi_menit');
         $jamSelesai  = Carbon::parse($request->jam_booking)->addMinutes($totalMenit)->format('H:i');
 
         // Cari pegawai yang tersedia di jam tersebut
