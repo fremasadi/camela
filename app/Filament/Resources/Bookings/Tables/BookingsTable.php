@@ -8,6 +8,8 @@ use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
+use Filament\Tables\Columns\Summarizers\Count;
+use Filament\Tables\Columns\Summarizers\Sum;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Filament\Actions\ViewAction;
@@ -41,12 +43,22 @@ class BookingsTable
                 TextColumn::make('status')
                     ->searchable(),
                 TextColumn::make('total_harga')
-                    ->numeric()
-                    ->sortable(),
+                    ->numeric(thousandsSeparator: '.')
+                    ->prefix('Rp ')
+                    ->sortable()
+                    ->summarize([
+                        Sum::make()
+                            ->label('Total Pendapatan')
+                            ->numeric(thousandsSeparator: '.')
+                            ->prefix('Rp '),
+                        Count::make()
+                            ->label('Jumlah Booking'),
+                    ]),
                 TextColumn::make('jenis_pembayaran')
                     ->badge(),
                 TextColumn::make('total_pembayaran')
-                    ->numeric()
+                    ->numeric(thousandsSeparator: '.')
+                    ->prefix('Rp ')
                     ->sortable(),
                 TextColumn::make('created_at')
                     ->dateTime()
