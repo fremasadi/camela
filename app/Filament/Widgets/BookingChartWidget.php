@@ -8,7 +8,7 @@ use Illuminate\Support\Carbon;
 
 class BookingChartWidget extends ChartWidget
 {
-    protected static ?string $heading = 'Booking 7 Hari Terakhir';
+    protected ?string $heading = 'Booking 7 Hari Terakhir';
     protected static ?int $sort = 2;
     protected int | string | array $columnSpan = 'full';
 
