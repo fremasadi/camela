@@ -24,7 +24,6 @@ class BookingsTable
     {
         return $table
         ->defaultSort('created_at', 'desc')
-
             ->columns([
                 TextColumn::make('order_id')
                     ->searchable(),
