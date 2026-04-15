@@ -73,6 +73,7 @@
 
     <div class="meta">
         <div>Periode: {{ $tanggalDari ? \Carbon\Carbon::parse($tanggalDari)->format('d/m/Y') : '-' }} s/d {{ $tanggalSampai ? \Carbon\Carbon::parse($tanggalSampai)->format('d/m/Y') : '-' }}</div>
+        <div>Pencarian: {{ filled($search) ? $search : '-' }}</div>
         <div>Tanggal export: {{ now()->format('d/m/Y H:i') }}</div>
     </div>
 
