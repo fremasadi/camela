@@ -2,15 +2,21 @@
 
 namespace App\Filament\Resources\Bookings\Tables;
 
+use App\Filament\Exports\BookingExporter;
 use App\Models\Pegawai;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\URL;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\Action;
+use Filament\Actions\ExportAction;
+use Filament\Actions\Exports\Enums\ExportFormat;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
-use Filament\Tables\Columns\Summarizers\Count;
 use Filament\Tables\Columns\Summarizers\Sum;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
 use Filament\Tables\Table;
 use Filament\Actions\ViewAction;
 use BackedEnum;
@@ -50,8 +56,6 @@ class BookingsTable
                             ->label('Total Pendapatan')
                             ->numeric(thousandsSeparator: '.')
                             ->prefix('Rp '),
-                        Count::make()
-                            ->label('Jumlah Booking'),
                     ]),
                 TextColumn::make('jenis_pembayaran')
                     ->badge(),
@@ -69,7 +73,25 @@ class BookingsTable
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                //
+                Filter::make('tanggal_booking')
+                    ->label('Filter Tanggal Booking')
+                    ->form([
+                        DatePicker::make('dari')
+                            ->label('Dari tanggal'),
+                        DatePicker::make('sampai')
+                            ->label('Sampai tanggal'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when(
+                                $data['dari'] ?? null,
+                                fn (Builder $query, $date): Builder => $query->whereDate('tanggal_booking', '>=', $date),
+                            )
+                            ->when(
+                                $data['sampai'] ?? null,
+                                fn (Builder $query, $date): Builder => $query->whereDate('tanggal_booking', '<=', $date),
+                            );
+                    }),
             ])
             ->recordActions([
                 ViewAction::make()
@@ -107,6 +129,24 @@ class BookingsTable
                     ->successNotificationTitle('Pegawai berhasil di-assign'),
             ])
             ->toolbarActions([
+                ExportAction::make('export_excel')
+                    ->label('Export Excel')
+                    ->icon('heroicon-o-document-arrow-down')
+                    ->color('success')
+                    ->exporter(BookingExporter::class)
+                    ->formats([ExportFormat::Xlsx]),
+                Action::make('export_pdf')
+                    ->label('Export PDF')
+                    ->icon('heroicon-o-document-text')
+                    ->color('danger')
+                    ->url(
+                        fn (): string => URL::temporarySignedRoute(
+                            'bookings.export.pdf',
+                            now()->addMinutes(5),
+                            request()->query(),
+                        ),
+                        shouldOpenInNewTab: true,
+                    ),
                 // BulkActionGroup::make([
                 //     DeleteBulkAction::make(),
                 // ]),
