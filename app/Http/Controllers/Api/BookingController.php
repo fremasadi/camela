@@ -43,8 +43,8 @@ class BookingController extends Controller
     public function slotTersedia(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'tanggal'       => 'required|date|after_or_equal:today',
-            'layanan_ids'   => 'required|array|min:1',
+            'tanggal' => 'required|date|after_or_equal:today',
+            'layanan_ids' => 'required|array|min:1',
             'layanan_ids.*' => 'required|exists:layanans,id',
         ]);
 
@@ -61,23 +61,23 @@ class BookingController extends Controller
             return response()->json(['status' => false, 'message' => 'Salon sedang tutup.'], 422);
         }
 
-        $jamBuka   = Carbon::parse($request->tanggal . ' ' . $jadwal->jam_buka);
-        $jamTutup  = Carbon::parse($request->tanggal . ' ' . $jadwal->jam_tutup);
-        $interval  = 30; // slot per 30 menit
+        $jamBuka = Carbon::parse($request->tanggal . ' ' . $jadwal->jam_buka);
+        $jamTutup = Carbon::parse($request->tanggal . ' ' . $jadwal->jam_tutup);
+        $interval = 30; // slot per 30 menit
 
         $slots = [];
         $current = $jamBuka->copy();
 
         while ($current->copy()->addMinutes($totalMenit)->lte($jamTutup)) {
-            $jamMulai  = $current->format('H:i');
+            $jamMulai = $current->format('H:i');
             $jamSelesai = $current->copy()->addMinutes($totalMenit)->format('H:i');
 
             $adaPegawai = Pegawai::tersedia($request->tanggal, $jamMulai, $jamSelesai) !== null;
 
             $slots[] = [
-                'jam_mulai'   => $jamMulai,
+                'jam_mulai' => $jamMulai,
                 'jam_selesai' => $jamSelesai,
-                'tersedia'    => $adaPegawai,
+                'tersedia' => $adaPegawai,
             ];
 
             $current->addMinutes($interval);
@@ -85,10 +85,10 @@ class BookingController extends Controller
 
         return response()->json([
             'status' => true,
-            'data'   => [
-                'tanggal'      => $request->tanggal,
-                'total_menit'  => $totalMenit,
-                'slots'        => $slots,
+            'data' => [
+                'tanggal' => $request->tanggal,
+                'total_menit' => $totalMenit,
+                'slots' => $slots,
             ]
         ]);
     }
@@ -145,8 +145,8 @@ class BookingController extends Controller
 
         // Hitung jam_selesai berdasarkan total estimasi layanan
         $layananIds = collect($request->items)->pluck('layanan_id');
-        $totalMenit  = (int) Layanan::whereIn('id', $layananIds)->sum('estimasi_menit');
-        $jamSelesai  = Carbon::parse($request->jam_booking)->addMinutes($totalMenit)->format('H:i');
+        $totalMenit = (int) Layanan::whereIn('id', $layananIds)->sum('estimasi_menit');
+        $jamSelesai = Carbon::parse($request->jam_booking)->addMinutes($totalMenit)->format('H:i');
 
         // Cari pegawai yang tersedia di jam tersebut
         $pegawai = Pegawai::tersedia($request->tanggal_booking, $request->jam_booking, $jamSelesai);
@@ -175,17 +175,17 @@ class BookingController extends Controller
 
             // Create Booking
             $booking = Booking::create([
-                'order_id'         => $orderId,
-                'user_id'          => $user->id,
-                'pegawai_id'       => $pegawai->id,
-                'tanggal_booking'  => $request->tanggal_booking,
-                'jam_booking'      => $request->jam_booking,
-                'jam_selesai'      => $jamSelesai,
-                'status'           => 'pending',
-                'total_harga'      => $totalHarga,
+                'order_id' => $orderId,
+                'user_id' => $user->id,
+                'pegawai_id' => $pegawai->id,
+                'tanggal_booking' => $request->tanggal_booking,
+                'jam_booking' => $request->jam_booking,
+                'jam_selesai' => $jamSelesai,
+                'status' => 'pending',
+                'total_harga' => $totalHarga,
                 'jenis_pembayaran' => $request->jenis_pembayaran,
                 'total_pembayaran' => $totalPembayaran,
-                'payment_type'     => $paymentType,
+                'payment_type' => $paymentType,
             ]);
 
             // Create Booking Details
@@ -385,98 +385,98 @@ class BookingController extends Controller
     }
 
     public function history()
-{
-    try {
-        $bookings = Booking::with([
+    {
+        try {
+            $bookings = Booking::with([
                 'details.layanan',
                 'pembayaran'
             ])
-            ->where('user_id', Auth::id())
-            ->orderBy('created_at', 'desc')
-            ->get();
+                ->where('user_id', Auth::id())
+                ->orderBy('created_at', 'desc')
+                ->get();
 
-        $formatted = $bookings->map(function ($booking) {
-            $payment = $booking->pembayaran;
+            $formatted = $bookings->map(function ($booking) {
+                $payment = $booking->pembayaran;
 
-            return [
-                'booking_id' => $booking->id,
-                'order_id' => $booking->order_id,
-                'total_harga' => (float) $booking->total_harga,
-                'total_pembayaran' => (float) $booking->total_pembayaran,
-                'jenis_pembayaran' => $booking->jenis_pembayaran,
-
-                // ===== BOOKING =====
-                'booking' => [
+                return [
+                    'booking_id' => $booking->id,
                     'order_id' => $booking->order_id,
-                    'user_id' => $booking->user_id,
-                    'tanggal_booking' => $booking->tanggal_booking,
-                    'jam_booking' => $booking->jam_booking,
-                    'status' => $booking->status,
                     'total_harga' => (float) $booking->total_harga,
-                    'jenis_pembayaran' => $booking->jenis_pembayaran,
                     'total_pembayaran' => (float) $booking->total_pembayaran,
-                    'created_at' => $booking->created_at,
-                    'updated_at' => $booking->updated_at,
-                    'id' => $booking->id,
-                ],
+                    'jenis_pembayaran' => $booking->jenis_pembayaran,
 
-                // ===== DETAILS + LAYANAN =====
-                'details' => $booking->details->map(function ($detail) {
-                    return [
-                        'id' => $detail->id,
-                        'harga' => (float) $detail->harga,
-                        'qty' => $detail->qty,
-                        'subtotal' => (float) $detail->subtotal,
+                    // ===== BOOKING =====
+                    'booking' => [
+                        'order_id' => $booking->order_id,
+                        'user_id' => $booking->user_id,
+                        'tanggal_booking' => $booking->tanggal_booking,
+                        'jam_booking' => $booking->jam_booking,
+                        'status' => $booking->status,
+                        'total_harga' => (float) $booking->total_harga,
+                        'jenis_pembayaran' => $booking->jenis_pembayaran,
+                        'total_pembayaran' => (float) $booking->total_pembayaran,
+                        'created_at' => $booking->created_at,
+                        'updated_at' => $booking->updated_at,
+                        'id' => $booking->id,
+                    ],
 
-                        'layanan' => $detail->layanan ? [
-                            'id' => $detail->layanan->id,
-                            'name' => $detail->layanan->name,
-                            'deskripsi' => $detail->layanan->deskripsi,
-                            'harga' => (float) $detail->layanan->harga,
-                            'estimasi_menit' => $detail->layanan->estimasi_menit,
-                            'image' => $detail->layanan->image,
-                        ] : null,
-                    ];
-                }),
+                    // ===== DETAILS + LAYANAN =====
+                    'details' => $booking->details->map(function ($detail) {
+                        return [
+                            'id' => $detail->id,
+                            'harga' => (float) $detail->harga,
+                            'qty' => $detail->qty,
+                            'subtotal' => (float) $detail->subtotal,
 
-                // ===== PAYMENT =====
-                'payment' => $payment ? [
-                    'booking_id' => $payment->booking_id,
-                    'order_id' => $payment->order_id,
-                    'gross_amount' => (float) $payment->gross_amount,
-                    'transaction_status' => $payment->transaction_status,
-                    'payment_type' => $payment->payment_type,
-                    'payment_gateway' => $payment->payment_gateway,
-                    'payment_gateway_reference_id' => $payment->payment_gateway_reference_id,
-                    'payment_date' => $payment->payment_date,
-                    'expired_at' => $payment->expired_at,
-                    'bank' => $payment->bank,
-                    'va_number' => $payment->va_number,
-                    'qr_url' => $payment->qr_url,
-                    'deeplink_url' => $payment->deeplink_url,
-                    'created_at' => $payment->created_at,
-                    'updated_at' => $payment->updated_at,
-                    'id' => $payment->id,
-                    'is_paid' => $payment->is_paid ?? false,
-                    'is_expired' => $payment->is_expired ?? false,
-                    'status_label' => $payment->status_label ?? 'Menunggu Pembayaran',
-                ] : null,
-            ];
-        });
+                            'layanan' => $detail->layanan ? [
+                                'id' => $detail->layanan->id,
+                                'name' => $detail->layanan->name,
+                                'deskripsi' => $detail->layanan->deskripsi,
+                                'harga' => (float) $detail->layanan->harga,
+                                'estimasi_menit' => $detail->layanan->estimasi_menit,
+                                'image' => $detail->layanan->image,
+                            ] : null,
+                        ];
+                    }),
 
-        return response()->json([
-            'status' => true,
-            'message' => 'Booking history fetched successfully',
-            'data' => $formatted
-        ]);
+                    // ===== PAYMENT =====
+                    'payment' => $payment ? [
+                        'booking_id' => $payment->booking_id,
+                        'order_id' => $payment->order_id,
+                        'gross_amount' => (float) $payment->gross_amount,
+                        'transaction_status' => $payment->transaction_status,
+                        'payment_type' => $payment->payment_type,
+                        'payment_gateway' => $payment->payment_gateway,
+                        'payment_gateway_reference_id' => $payment->payment_gateway_reference_id,
+                        'payment_date' => $payment->payment_date,
+                        'expired_at' => $payment->expired_at,
+                        'bank' => $payment->bank,
+                        'va_number' => $payment->va_number,
+                        'qr_url' => $payment->qr_url,
+                        'deeplink_url' => $payment->deeplink_url,
+                        'created_at' => $payment->created_at,
+                        'updated_at' => $payment->updated_at,
+                        'id' => $payment->id,
+                        'is_paid' => $payment->is_paid ?? false,
+                        'is_expired' => $payment->is_expired ?? false,
+                        'status_label' => $payment->status_label ?? 'Menunggu Pembayaran',
+                    ] : null,
+                ];
+            });
 
-    } catch (\Exception $e) {
-        return response()->json([
-            'status' => false,
-            'message' => 'Failed to get history: ' . $e->getMessage(),
-        ], 500);
+            return response()->json([
+                'status' => true,
+                'message' => 'Booking history fetched successfully',
+                'data' => $formatted
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Failed to get history: ' . $e->getMessage(),
+            ], 500);
+        }
     }
-}
 
 
 

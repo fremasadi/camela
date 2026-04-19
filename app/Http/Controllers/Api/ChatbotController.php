@@ -11,6 +11,9 @@ use Illuminate\Support\Facades\Log;
 
 class ChatbotController extends Controller
 {
+    private const SALON_ADDRESS = 'Jl. Brawijaya No.4, Pocanan, Kec. Kota, Kabupaten Kediri, Jawa Timur 64123';
+    private const SALON_MAPS_URL = 'https://maps.app.goo.gl/YaViS4Dq28u3NfnG6';
+
     public function __construct(
         private readonly OpenRouterChatService $openRouterChatService,
     ) {
@@ -121,6 +124,8 @@ class ChatbotController extends Controller
             })->implode("\n");
 
         $userName = $request->user()?->name ?? 'Pelanggan';
+        $addressText = self::SALON_ADDRESS;
+        $mapsUrl = self::SALON_MAPS_URL;
 
         return <<<PROMPT
 Anda adalah asisten virtual Camela.
@@ -129,8 +134,15 @@ Fokus Anda adalah membantu pelanggan memahami layanan, promo, jadwal operasional
 Jangan mengarang informasi di luar konteks yang diberikan. Jika data tidak tersedia, katakan dengan jujur bahwa informasinya belum tersedia dan sarankan menghubungi admin.
 Jika pengguna menanyakan harga, gunakan angka dari konteks ini.
 Jika pengguna menanyakan promo, hanya sebut promo yang aktif.
+Jika pengguna menanyakan alamat, lokasi, maps, atau cara menuju salon, gunakan data alamat dan link maps yang ada di bawah ini.
 Nama pengguna saat ini: {$userName}
 Tanggal hari ini: {$today}
+
+Alamat salon:
+{$addressText}
+
+Google Maps:
+{$mapsUrl}
 
 Jadwal operasional:
 {$jadwalText}

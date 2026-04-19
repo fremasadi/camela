@@ -89,6 +89,8 @@ class ChatbotApiTest extends TestCase
                 && $request['model'] === 'meta-llama/llama-3.1-8b-instruct:free'
                 && $request['messages'][0]['role'] === 'system'
                 && str_contains($request['messages'][0]['content'], 'Creambath')
+                && str_contains($request['messages'][0]['content'], 'Jl. Brawijaya No.4')
+                && str_contains($request['messages'][0]['content'], 'https://maps.app.goo.gl/YaViS4Dq28u3NfnG6')
                 && $request['messages'][1]['content'] === 'Creambath ada berapa harganya?';
         });
     }
