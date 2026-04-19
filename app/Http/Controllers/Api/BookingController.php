@@ -61,14 +61,15 @@ class BookingController extends Controller
             return response()->json(['status' => false, 'message' => 'Salon sedang tutup.'], 422);
         }
 
-        $jamBuka = Carbon::parse($request->tanggal . ' ' . $jadwal->jam_buka);
-        $jamTutup = Carbon::parse($request->tanggal . ' ' . $jadwal->jam_tutup);
+        $timezone = 'Asia/Jakarta';
+        $jamBuka = Carbon::parse($request->tanggal . ' ' . $jadwal->jam_buka, $timezone);
+        $jamTutup = Carbon::parse($request->tanggal . ' ' . $jadwal->jam_tutup, $timezone);
         $interval = 30; // slot per 30 menit
 
         $slots = [];
         $current = $jamBuka->copy();
-        $isToday = $request->tanggal === Carbon::today()->toDateString();
-        $now = Carbon::now();
+        $isToday = $request->tanggal === Carbon::now($timezone)->toDateString();
+        $now = Carbon::now($timezone);
 
         while ($current->copy()->addMinutes($totalMenit)->lte($jamTutup)) {
             // Kalau hari ini, lewati slot yang jam mulainya sudah lewat
