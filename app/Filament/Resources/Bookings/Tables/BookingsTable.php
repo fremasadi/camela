@@ -134,6 +134,7 @@ class BookingsTable
                     ->icon('heroicon-o-document-arrow-down')
                     ->color('success')
                     ->exporter(BookingExporter::class)
+                    ->columnMapping(false)
                     ->formats([ExportFormat::Xlsx]),
                 Action::make('export_pdf')
                     ->label('Export PDF')

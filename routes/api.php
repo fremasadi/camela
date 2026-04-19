@@ -3,6 +3,7 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\ChatbotController;
 use App\Http\Controllers\Api\KategoriLayananController;
 use App\Http\Controllers\Api\LayananController;
 use App\Http\Controllers\Api\BookingController;
@@ -49,3 +50,8 @@ Route::middleware('auth:sanctum')
 // MIDTRANS CALLBACK (without auth)
 Route::post('/payment/callback', [BookingController::class, 'callback']);
 
+Route::middleware('auth:sanctum')
+    ->prefix('chatbot')
+    ->group(function () {
+        Route::post('/message', [ChatbotController::class, 'message']);
+    });
