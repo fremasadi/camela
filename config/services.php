@@ -38,7 +38,7 @@ return [
     'openrouter' => [
         'api_key' => env('OPENROUTER_API_KEY'),
         'base_url' => env('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1'),
-        'model' => env('OPENROUTER_MODEL', 'meta-llama/llama-3-8b-instruct:free'),
+        'model' => env('OPENROUTER_MODEL', 'meta-llama/llama-3.1-8b-instruct:free'),
         'site_url' => env('OPENROUTER_SITE_URL', env('APP_URL')),
         'app_name' => env('OPENROUTER_APP_NAME', env('APP_NAME', 'Camela')),
     ],

@@ -19,7 +19,7 @@ class ChatbotApiTest extends TestCase
     {
         config([
             'services.openrouter.api_key' => 'test-openrouter-key',
-            'services.openrouter.model' => 'meta-llama/llama-3-8b-instruct:free',
+            'services.openrouter.model' => 'meta-llama/llama-3.1-8b-instruct:free',
             'services.openrouter.base_url' => 'https://openrouter.ai/api/v1',
         ]);
 
@@ -51,7 +51,7 @@ class ChatbotApiTest extends TestCase
         Http::fake([
             'https://openrouter.ai/api/v1/chat/completions' => Http::response([
                 'id' => 'chatcmpl-test',
-                'model' => 'meta-llama/llama-3-8b-instruct:free',
+                'model' => 'meta-llama/llama-3.1-8b-instruct:free',
                 'choices' => [
                     [
                         'message' => [
@@ -80,13 +80,13 @@ class ChatbotApiTest extends TestCase
                 'status' => true,
                 'data' => [
                     'reply' => 'Layanan creambath tersedia dengan harga Rp 75.000.',
-                    'model' => 'meta-llama/llama-3-8b-instruct:free',
+                    'model' => 'meta-llama/llama-3.1-8b-instruct:free',
                 ],
             ]);
 
         Http::assertSent(function ($request) {
             return $request->url() === 'https://openrouter.ai/api/v1/chat/completions'
-                && $request['model'] === 'meta-llama/llama-3-8b-instruct:free'
+                && $request['model'] === 'meta-llama/llama-3.1-8b-instruct:free'
                 && $request['messages'][0]['role'] === 'system'
                 && str_contains($request['messages'][0]['content'], 'Creambath')
                 && $request['messages'][1]['content'] === 'Creambath ada berapa harganya?';
