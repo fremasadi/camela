@@ -67,8 +67,16 @@ class BookingController extends Controller
 
         $slots = [];
         $current = $jamBuka->copy();
+        $isToday = $request->tanggal === Carbon::today()->toDateString();
+        $now = Carbon::now();
 
         while ($current->copy()->addMinutes($totalMenit)->lte($jamTutup)) {
+            // Kalau hari ini, lewati slot yang jam mulainya sudah lewat
+            if ($isToday && $current->lte($now)) {
+                $current->addMinutes($interval);
+                continue;
+            }
+
             $jamMulai = $current->format('H:i');
             $jamSelesai = $current->copy()->addMinutes($totalMenit)->format('H:i');
 
