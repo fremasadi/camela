@@ -6,6 +6,7 @@ use App\Models\Booking;
 use Filament\Actions\Exports\ExportColumn;
 use Filament\Actions\Exports\Exporter;
 use Filament\Actions\Exports\Models\Export;
+use Illuminate\Database\Eloquent\Builder;
 
 class BookingExporter extends Exporter
 {
@@ -41,6 +42,11 @@ class BookingExporter extends Exporter
                 ->label('Dibuat Pada')
                 ->formatStateUsing(fn ($state): string => blank($state) ? '-' : \Carbon\Carbon::parse($state)->format('d/m/Y H:i')),
         ];
+    }
+
+    public static function modifyQuery(Builder $query): Builder
+    {
+        return $query->where('status', 'confirmed');
     }
 
     public static function getCompletedNotificationBody(Export $export): string

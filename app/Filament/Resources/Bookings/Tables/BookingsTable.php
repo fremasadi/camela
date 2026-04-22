@@ -29,7 +29,8 @@ class BookingsTable
     public static function configure(Table $table): Table
     {
         return $table
-        ->defaultSort('created_at', 'desc')
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->where('status', 'confirmed'))
+            ->defaultSort('created_at', 'desc')
             ->columns([
                 TextColumn::make('order_id')
                     ->searchable(),

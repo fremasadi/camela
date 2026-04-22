@@ -38,6 +38,7 @@ class BookingExportPdfController extends Controller
 
         $query = Booking::query()
             ->with(['user', 'pegawai'])
+            ->where('status', 'confirmed')
             ->when(
                 filled($search),
                 function (Builder $query) use ($search): Builder {
