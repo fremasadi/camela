@@ -29,7 +29,6 @@ class BookingsTable
     public static function configure(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn (Builder $query): Builder => $query->where('status', 'confirmed'))
             ->defaultSort('created_at', 'desc')
             ->columns([
                 TextColumn::make('order_id')
@@ -55,6 +54,7 @@ class BookingsTable
                     ->summarize([
                         Sum::make()
                             ->label('Total Pendapatan')
+                            ->query(fn (Builder $query): Builder => $query->where('status', 'confirmed'))
                             ->numeric(thousandsSeparator: '.')
                             ->prefix('Rp '),
                     ]),
@@ -86,11 +86,11 @@ class BookingsTable
                         return $query
                             ->when(
                                 $data['dari'] ?? null,
-                                fn (Builder $query, $date): Builder => $query->whereDate('tanggal_booking', '>=', $date),
+                                fn(Builder $query, $date): Builder => $query->whereDate('tanggal_booking', '>=', $date),
                             )
                             ->when(
                                 $data['sampai'] ?? null,
-                                fn (Builder $query, $date): Builder => $query->whereDate('tanggal_booking', '<=', $date),
+                                fn(Builder $query, $date): Builder => $query->whereDate('tanggal_booking', '<=', $date),
                             );
                     }),
             ])
@@ -121,7 +121,7 @@ class BookingsTable
                             ->required()
                             ->searchable(),
                     ])
-                    ->fillForm(fn ($record) => [
+                    ->fillForm(fn($record) => [
                         'pegawai_id' => $record->pegawai_id,
                     ])
                     ->action(function ($record, array $data) {
@@ -142,7 +142,7 @@ class BookingsTable
                     ->icon('heroicon-o-document-text')
                     ->color('danger')
                     ->url(
-                        fn (): string => URL::temporarySignedRoute(
+                        fn(): string => URL::temporarySignedRoute(
                             'bookings.export.pdf',
                             now()->addMinutes(5),
                             request()->query(),
