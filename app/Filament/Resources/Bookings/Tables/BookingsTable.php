@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Bookings\Tables;
 use App\Filament\Exports\BookingExporter;
 use App\Models\Pegawai;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\URL;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -54,7 +55,7 @@ class BookingsTable
                     ->summarize([
                         Sum::make()
                             ->label('Total Pendapatan')
-                            ->query(fn (Builder $query): Builder => $query->where('status', 'confirmed'))
+                            ->query(fn (QueryBuilder $query): QueryBuilder => $query->where('status', 'confirmed'))
                             ->numeric(thousandsSeparator: '.')
                             ->prefix('Rp '),
                     ]),
