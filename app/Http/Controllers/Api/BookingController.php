@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Booking;
 use App\Models\BookingDetail;
+use App\Models\JadwalOperasional;
 use App\Models\Layanan;
 use App\Models\Pegawai;
 use App\Models\Pembayaran;
@@ -20,14 +21,18 @@ use Kreait\Firebase\Factory;
 
 class BookingController extends Controller
 {
-    private $firebaseDatabase;
+    private $firebaseDatabase = null;
 
     public function __construct()
     {
-        $this->firebaseDatabase = (new Factory)
-            ->withServiceAccount(config('firebase.firebase.service_account'))
-            ->withDatabaseUri('https://fre-kantin-default-rtdb.firebaseio.com')
-            ->createDatabase();
+        $serviceAccount = config('firebase.firebase.service_account');
+
+        if ($serviceAccount && file_exists($serviceAccount)) {
+            $this->firebaseDatabase = (new Factory)
+                ->withServiceAccount($serviceAccount)
+                ->withDatabaseUri('https://fre-kantin-default-rtdb.firebaseio.com')
+                ->createDatabase();
+        }
 
         Config::$serverKey = env('MIDTRANS_SERVER_KEY');
         Config::$clientKey = env('MIDTRANS_CLIENT_KEY');
@@ -54,14 +59,13 @@ class BookingController extends Controller
 
         $totalMenit = (int) Layanan::whereIn('id', $request->layanan_ids)->sum('estimasi_menit');
 
-        // Ambil jadwal operasional aktif (gunakan yang pertama)
-        $jadwal = \App\Models\JadwalOperasional::where('status', 'buka')->first();
+        $jadwal = $this->getJadwalOperasionalByTanggal($request->tanggal);
 
         if (!$jadwal) {
             return response()->json(['status' => false, 'message' => 'Salon sedang tutup.'], 422);
         }
 
-        $timezone = 'Asia/Jakarta';
+        $timezone = config('app.timezone', 'UTC');
         $jamBuka = Carbon::parse($request->tanggal . ' ' . $jadwal->jam_buka, $timezone);
         $jamTutup = Carbon::parse($request->tanggal . ' ' . $jadwal->jam_tutup, $timezone);
         $interval = 30; // slot per 30 menit
@@ -83,11 +87,13 @@ class BookingController extends Controller
 
             $adaPegawai = Pegawai::tersedia($request->tanggal, $jamMulai, $jamSelesai) !== null;
 
-            $slots[] = [
-                'jam_mulai' => $jamMulai,
-                'jam_selesai' => $jamSelesai,
-                'tersedia' => $adaPegawai,
-            ];
+            if ($adaPegawai) {
+                $slots[] = [
+                    'jam_mulai' => $jamMulai,
+                    'jam_selesai' => $jamSelesai,
+                    'tersedia' => true,
+                ];
+            }
 
             $current->addMinutes($interval);
         }
@@ -97,6 +103,7 @@ class BookingController extends Controller
             'data' => [
                 'tanggal' => $request->tanggal,
                 'total_menit' => $totalMenit,
+                'next_available' => $slots[0] ?? null,
                 'slots' => $slots,
             ]
         ]);
@@ -157,6 +164,28 @@ class BookingController extends Controller
         $totalMenit = (int) Layanan::whereIn('id', $layananIds)->sum('estimasi_menit');
         $jamSelesai = Carbon::parse($request->jam_booking)->addMinutes($totalMenit)->format('H:i');
 
+        $jadwal = $this->getJadwalOperasionalByTanggal($request->tanggal_booking);
+
+        if (!$jadwal) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Salon sedang tutup pada tanggal yang dipilih.',
+            ], 422);
+        }
+
+        $timezone = config('app.timezone', 'UTC');
+        $jamBuka = Carbon::parse($request->tanggal_booking . ' ' . $jadwal->jam_buka, $timezone);
+        $jamTutup = Carbon::parse($request->tanggal_booking . ' ' . $jadwal->jam_tutup, $timezone);
+        $jamBooking = Carbon::parse($request->tanggal_booking . ' ' . $request->jam_booking, $timezone);
+        $jamBookingSelesai = Carbon::parse($request->tanggal_booking . ' ' . $jamSelesai, $timezone);
+
+        if ($jamBooking->lt($jamBuka) || $jamBookingSelesai->gt($jamTutup)) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Jam booking berada di luar jadwal operasional.',
+            ], 422);
+        }
+
         // Cari pegawai yang tersedia di jam tersebut
         $pegawai = Pegawai::tersedia($request->tanggal_booking, $request->jam_booking, $jamSelesai);
 
@@ -212,9 +241,9 @@ class BookingController extends Controller
                 $paymentType,
                 $totalPembayaran,
                 $orderId,
-                $bank,
                 $user,
-                $request->items
+                $request->items,
+                $bank,
             );
 
             if (isset($paymentGatewayResponse['error'])) {
@@ -240,17 +269,19 @@ class BookingController extends Controller
                 'deeplink_url' => $paymentGatewayResponse['deeplink_redirect'],
             ]);
 
-            // Push notification to Firebase
-            $this->firebaseDatabase
-                ->getReference('notifications/bookings')
-                ->push([
-                    'order_id' => $orderId,
-                    'booking_id' => $booking->id,
-                    'user_name' => $user->name,
-                    'total_amount' => $totalPembayaran,
-                    'status' => 'pending',
-                    'timestamp' => Carbon::now()->timestamp,
-                ]);
+            if ($this->firebaseDatabase) {
+                // Push notification to Firebase
+                $this->firebaseDatabase
+                    ->getReference('notifications/bookings')
+                    ->push([
+                        'order_id' => $orderId,
+                        'booking_id' => $booking->id,
+                        'user_name' => $user->name,
+                        'total_amount' => $totalPembayaran,
+                        'status' => 'pending',
+                        'timestamp' => Carbon::now()->timestamp,
+                    ]);
+            }
 
             DB::commit();
 
@@ -278,7 +309,21 @@ class BookingController extends Controller
         }
     }
 
-    private function processPayment($paymentType, $totalAmount, $orderId, $bank = null, $user, $items)
+    private function getJadwalOperasionalByTanggal(string $tanggal): ?JadwalOperasional
+    {
+        $hari = JadwalOperasional::hariDariTanggal($tanggal);
+
+        return JadwalOperasional::query()
+            ->where('hari', $hari)
+            ->where('status', 'buka')
+            ->first()
+            ?? JadwalOperasional::query()
+                ->whereNull('hari')
+                ->where('status', 'buka')
+                ->first();
+    }
+
+    private function processPayment($paymentType, $totalAmount, $orderId, $user, $items, $bank = null)
     {
         // Log untuk debugging
         Log::info('Midtrans Config Check', [
@@ -750,6 +795,10 @@ class BookingController extends Controller
 
     private function updateFirebaseBooking($orderId, $status, $amount)
     {
+        if (!$this->firebaseDatabase) {
+            return;
+        }
+
         try {
             // Cari reference berdasarkan order_id di notifications/bookings
             $bookingsRef = $this->firebaseDatabase->getReference('notifications/bookings');

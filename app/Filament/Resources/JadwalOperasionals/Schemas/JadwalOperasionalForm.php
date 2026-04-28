@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\JadwalOperasionals\Schemas;
 
+use App\Models\JadwalOperasional;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\TimePicker;
@@ -13,6 +14,10 @@ class JadwalOperasionalForm
     {
         return $schema
             ->components([
+                Select::make('hari')
+                    ->options(JadwalOperasional::hariOptions())
+                    ->required()
+                    ->unique(ignoreRecord: true),
                 TimePicker::make('jam_buka')
                     ->required(),
                 TimePicker::make('jam_tutup')

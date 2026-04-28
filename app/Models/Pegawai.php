@@ -25,10 +25,10 @@ class Pegawai extends Model
     {
         return self::where('status', 'aktif')
             ->whereDoesntHave('bookings', function ($q) use ($tanggal, $jamMulai, $jamSelesai) {
-                $q->where('tanggal_booking', $tanggal)
-                  ->whereNotIn('status', ['cancelled', 'rejected'])
-                  ->where('jam_booking', '<', $jamSelesai)
-                  ->where('jam_selesai', '>', $jamMulai);
+                $q->whereDate('tanggal_booking', $tanggal)
+                    ->whereNotIn('status', ['cancelled', 'rejected'])
+                    ->where('jam_booking', '<', $jamSelesai)
+                    ->where('jam_selesai', '>', $jamMulai);
             })
             ->first();
     }

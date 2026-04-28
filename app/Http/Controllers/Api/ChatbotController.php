@@ -78,8 +78,17 @@ class ChatbotController extends Controller
     {
         $today = now()->toDateString();
         $jadwalList = JadwalOperasional::query()
-            ->orderBy('id')
-            ->get(['jam_buka', 'jam_tutup', 'status', 'keterangan']);
+            ->orderByRaw("CASE hari
+                WHEN 'senin' THEN 1
+                WHEN 'selasa' THEN 2
+                WHEN 'rabu' THEN 3
+                WHEN 'kamis' THEN 4
+                WHEN 'jumat' THEN 5
+                WHEN 'sabtu' THEN 6
+                WHEN 'minggu' THEN 7
+                ELSE 8
+            END")
+            ->get(['hari', 'jam_buka', 'jam_tutup', 'status', 'keterangan']);
 
         $layanans = Layanan::query()
             ->with([
@@ -95,7 +104,14 @@ class ChatbotController extends Controller
         $jadwalText = $jadwalList->isEmpty()
             ? 'Jadwal operasional belum tersedia.'
             : $jadwalList->map(function ($jadwal) {
-                $detail = "{$jadwal->status}: {$jadwal->jam_buka} - {$jadwal->jam_tutup}";
+                $namaHari = $jadwal->hari
+                    ? (JadwalOperasional::hariOptions()[$jadwal->hari] ?? ucfirst((string) $jadwal->hari))
+                    : 'Umum';
+                $detail = "{$namaHari}: {$jadwal->status}";
+
+                if ($jadwal->status === 'buka') {
+                    $detail .= " {$jadwal->jam_buka} - {$jadwal->jam_tutup}";
+                }
 
                 if ($jadwal->keterangan) {
                     $detail .= " ({$jadwal->keterangan})";

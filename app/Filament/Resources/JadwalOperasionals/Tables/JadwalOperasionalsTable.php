@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\JadwalOperasionals\Tables;
 
+use App\Models\JadwalOperasional;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -14,6 +15,10 @@ class JadwalOperasionalsTable
     {
         return $table
             ->columns([
+                TextColumn::make('hari')
+                    ->formatStateUsing(fn (?string $state): string => $state ? (JadwalOperasional::hariOptions()[$state] ?? ucfirst($state)) : '-')
+                    ->sortable()
+                    ->searchable(),
                 TextColumn::make('jam_buka')
                     ->time()
                     ->sortable(),
