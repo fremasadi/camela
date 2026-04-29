@@ -2,17 +2,11 @@
 
 namespace App\Filament\Resources\Bookings\Tables;
 
-use App\Filament\Exports\BookingExporter;
 use App\Models\Pegawai;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\URL;
-use Filament\Actions\BulkActionGroup;
-use Filament\Actions\DeleteBulkAction;
-use Filament\Actions\EditAction;
 use Filament\Actions\Action;
-use Filament\Actions\ExportAction;
-use Filament\Actions\Exports\Enums\ExportFormat;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
 use Filament\Tables\Columns\Summarizers\Sum;
@@ -20,11 +14,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Table;
 use Filament\Actions\ViewAction;
-use BackedEnum;
-use Filament\Resources\Resource;
-use Filament\Schemas\Schema;
-use Filament\Support\Icons\Heroicon;
-use UnitEnum;
+
 class BookingsTable
 {
     public static function configure(Table $table): Table
@@ -131,13 +121,18 @@ class BookingsTable
                     ->successNotificationTitle('Pegawai berhasil di-assign'),
             ])
             ->toolbarActions([
-                ExportAction::make('export_excel')
+                Action::make('export_excel')
                     ->label('Export Excel')
                     ->icon('heroicon-o-document-arrow-down')
                     ->color('success')
-                    ->exporter(BookingExporter::class)
-                    ->columnMapping(false)
-                    ->formats([ExportFormat::Xlsx]),
+                    ->url(
+                        fn(): string => URL::temporarySignedRoute(
+                            'bookings.export.excel',
+                            now()->addMinutes(5),
+                            request()->query(),
+                        ),
+                        shouldOpenInNewTab: true,
+                    ),
                 Action::make('export_pdf')
                     ->label('Export PDF')
                     ->icon('heroicon-o-document-text')
