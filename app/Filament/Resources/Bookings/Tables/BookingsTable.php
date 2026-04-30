@@ -45,12 +45,12 @@ class BookingsTable
                     ->summarize([
                         Sum::make()
                             ->label('Total Pendapatan')
-                            ->query(fn (QueryBuilder $query): QueryBuilder => $query->where('status', 'confirmed'))
+                            ->query(fn(QueryBuilder $query): QueryBuilder => $query->where('status', 'confirmed'))
                             ->numeric(thousandsSeparator: '.')
                             ->prefix('Rp '),
                     ]),
-                TextColumn::make('jenis_pembayaran')
-                    ->badge(),
+                // TextColumn::make('jenis_pembayaran')
+                //     ->badge(),
                 TextColumn::make('total_pembayaran')
                     ->numeric(thousandsSeparator: '.')
                     ->prefix('Rp ')
