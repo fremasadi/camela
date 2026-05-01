@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="id">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -38,7 +39,8 @@
             font-size: 12px;
         }
 
-        th, td {
+        th,
+        td {
             border: 1px solid #d1d5db;
             padding: 8px;
             text-align: left;
@@ -54,11 +56,14 @@
         }
     </style>
 </head>
+
 <body>
     <h1>Laporan Booking</h1>
 
     <div class="meta">
-        <div>Periode: {{ $tanggalDari ? \Carbon\Carbon::parse($tanggalDari)->format('d/m/Y') : '-' }} s/d {{ $tanggalSampai ? \Carbon\Carbon::parse($tanggalSampai)->format('d/m/Y') : '-' }}</div>
+        <div>Periode: {{ $tanggalDari ? \Carbon\Carbon::parse($tanggalDari)->format('d/m/Y') : '-' }} s/d
+            {{ $tanggalSampai ? \Carbon\Carbon::parse($tanggalSampai)->format('d/m/Y') : '-' }}
+        </div>
         <div>Pencarian: {{ filled($search) ? $search : '-' }}</div>
         <div>Tanggal export: {{ now()->format('d/m/Y H:i') }}</div>
     </div>
@@ -77,7 +82,7 @@
                 <th>Tanggal</th>
                 <th>Jam</th>
                 <th>Status</th>
-                <th>Pembayaran</th>
+                <!-- <th>Pembayaran</th> -->
                 <th class="text-right">Total Harga</th>
                 <th class="text-right">Total Bayar</th>
             </tr>
@@ -91,7 +96,7 @@
                     <td>{{ optional($booking->tanggal_booking)->format('d/m/Y') }}</td>
                     <td>{{ \Carbon\Carbon::parse($booking->jam_booking)->format('H:i') }}</td>
                     <td>{{ $booking->status }}</td>
-                    <td>{{ $booking->jenis_pembayaran }}</td>
+                    <!-- <td>{{ $booking->jenis_pembayaran }}</td> -->
                     <td class="text-right">Rp {{ number_format((float) $booking->total_harga, 0, ',', '.') }}</td>
                     <td class="text-right">Rp {{ number_format((float) $booking->total_pembayaran, 0, ',', '.') }}</td>
                 </tr>
@@ -103,4 +108,5 @@
         </tbody>
     </table>
 </body>
+
 </html>
