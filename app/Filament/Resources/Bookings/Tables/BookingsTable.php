@@ -137,14 +137,11 @@ class BookingsTable
                     ->label('Export PDF')
                     ->icon('heroicon-o-document-text')
                     ->color('danger')
-                    ->url(
-                        fn(): string => URL::temporarySignedRoute(
-                            'bookings.export.pdf',
-                            now()->addMinutes(5),
-                            request()->query(),
-                        ),
-                        shouldOpenInNewTab: true,
-                    ),
+                    ->url(fn(): string => URL::temporarySignedRoute(
+                        'bookings.export.pdf',
+                        now()->addMinutes(5),
+                        request()->query(),
+                    )),
                 // BulkActionGroup::make([
                 //     DeleteBulkAction::make(),
                 // ]),

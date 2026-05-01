@@ -5,10 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Export Booking</title>
     <style>
+        @page {
+            margin: 24px;
+        }
+
         body {
             font-family: Arial, sans-serif;
             color: #111827;
-            margin: 24px;
+            margin: 0;
         }
 
         h1 {
@@ -48,27 +52,9 @@
         .text-right {
             text-align: right;
         }
-
-        .actions {
-            margin-bottom: 16px;
-        }
-
-        @media print {
-            .actions {
-                display: none;
-            }
-
-            body {
-                margin: 0;
-            }
-        }
     </style>
 </head>
 <body>
-    <div class="actions">
-        <button onclick="window.print()">Print / Save PDF</button>
-    </div>
-
     <h1>Laporan Booking</h1>
 
     <div class="meta">
