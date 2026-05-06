@@ -100,6 +100,7 @@ class BookingsTable
                     ->label('Assign Pegawai')
                     ->icon('heroicon-o-user')
                     ->color('warning')
+                    ->visible(fn($record) => $record->status === 'confirmed')
                     ->modalHeading('Assign Pegawai ke Booking')
                     ->modalWidth('sm')
                     ->form([
@@ -119,6 +120,18 @@ class BookingsTable
                         $record->update(['pegawai_id' => $data['pegawai_id']]);
                     })
                     ->successNotificationTitle('Pegawai berhasil di-assign'),
+                Action::make('mark_as_completed')
+                    ->label('Selesaikan')
+                    ->icon('heroicon-o-check-circle')
+                    ->color('success')
+                    ->visible(fn($record) => $record->status === 'confirmed' && !empty($record->pegawai_id))
+                    ->requiresConfirmation()
+                    ->modalHeading('Selesaikan Booking')
+                    ->modalDescription('Status booking akan diubah menjadi selesai.')
+                    ->action(function ($record) {
+                        $record->update(['status' => 'selesai']);
+                    })
+                    ->successNotificationTitle('Status booking berhasil diubah menjadi selesai'),
             ])
             ->toolbarActions([
                 Action::make('export_excel')

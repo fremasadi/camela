@@ -85,13 +85,14 @@ class BookingController extends Controller
             $jamMulai = $current->format('H:i');
             $jamSelesai = $current->copy()->addMinutes($totalMenit)->format('H:i');
 
-            $adaPegawai = Pegawai::tersedia($request->tanggal, $jamMulai, $jamSelesai) !== null;
+            $jumlahPegawaiTersedia = Pegawai::jumlahTersedia($request->tanggal, $jamMulai, $jamSelesai);
 
-            if ($adaPegawai) {
+            if ($jumlahPegawaiTersedia > 0) {
                 $slots[] = [
                     'jam_mulai' => $jamMulai,
                     'jam_selesai' => $jamSelesai,
                     'tersedia' => true,
+                    'sisa_pegawai' => $jumlahPegawaiTersedia,
                 ];
             }
 
@@ -186,18 +187,25 @@ class BookingController extends Controller
             ], 422);
         }
 
-        // Cari pegawai yang tersedia di jam tersebut
-        $pegawai = Pegawai::tersedia($request->tanggal_booking, $request->jam_booking, $jamSelesai);
-
-        if (!$pegawai) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Tidak ada pegawai yang tersedia di jam tersebut. Silakan pilih jam lain.',
-            ], 422);
-        }
-
         DB::beginTransaction();
         try {
+            // Lock data pegawai aktif agar pengecekan slot dan assign pegawai sinkron
+            // saat ada beberapa request booking masuk di waktu yang hampir bersamaan.
+            Pegawai::where('status', 'aktif')
+                ->lockForUpdate()
+                ->get();
+
+            $pegawai = Pegawai::tersedia($request->tanggal_booking, $request->jam_booking, $jamSelesai);
+
+            if (!$pegawai) {
+                DB::rollBack();
+
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Slot sudah penuh. Tidak ada pegawai yang tersedia di jam tersebut. Silakan pilih jam lain.',
+                ], 422);
+            }
+
             // Calculate total
             $totalHarga = 0;
             foreach ($request->items as $item) {
@@ -656,15 +664,15 @@ class BookingController extends Controller
             // Update status berdasarkan transaction_status
             switch ($transactionStatus) {
                 case 'capture':
-                    if ($fraudStatus == 'challenge') {
+                    if ($fraudStatus === 'challenge') {
                         $this->updateBookingStatus($booking, $pembayaran, 'challenge', $request);
-                    } else if ($fraudStatus == 'accept') {
-                        $this->updateBookingStatus($booking, $pembayaran, 'success', $request);
+                    } elseif ($fraudStatus === 'accept' || $fraudStatus === null) {
+                        $this->updateBookingStatus($booking, $pembayaran, 'capture', $request);
                     }
                     break;
 
                 case 'settlement':
-                    $this->updateBookingStatus($booking, $pembayaran, 'success', $request);
+                    $this->updateBookingStatus($booking, $pembayaran, 'settlement', $request);
                     break;
 
                 case 'pending':
@@ -722,12 +730,10 @@ class BookingController extends Controller
         }
     }
 
-    private function updateBookingStatus($booking, $pembayaran, $status, $request)
+    private function updateBookingStatus($booking, $pembayaran, $paymentStatus, $request)
     {
         try {
-            // Mapping status untuk booking
             $bookingStatusMap = [
-                'success' => 'confirmed',
                 'settlement' => 'confirmed',
                 'capture' => 'confirmed',
                 'pending' => 'pending',
@@ -739,55 +745,54 @@ class BookingController extends Controller
                 'partial_refunded' => 'partial_refunded',
             ];
 
-            $bookingStatus = $bookingStatusMap[$status] ?? 'pending';
+            $bookingStatus = $bookingStatusMap[$paymentStatus] ?? 'pending';
 
-            // Update booking status
-            $booking->update([
-                'status' => $bookingStatus,
-                'updated_at' => Carbon::now()
-            ]);
+            DB::transaction(function () use ($booking, $pembayaran, $bookingStatus, $paymentStatus, $request) {
+                $booking->update([
+                    'status' => $bookingStatus,
+                    'updated_at' => Carbon::now(),
+                ]);
 
-            // Update payment record
-            $paymentUpdateData = [
-                'transaction_status' => $status,
-                'payment_gateway_response' => json_encode($request->all()),
-                'transaction_id' => $request->transaction_id ?? null,
-                'fraud_status' => $request->fraud_status ?? null,
-                'updated_at' => Carbon::now()
-            ];
+                $paymentUpdateData = [
+                    'transaction_status' => $paymentStatus,
+                    'payment_gateway_response' => $request->all(),
+                    'transaction_id' => $request->transaction_id ?? null,
+                    'fraud_status' => $request->fraud_status ?? null,
+                    'updated_at' => Carbon::now(),
+                ];
 
-            // Jika status success, update settlement_time
-            if ($status === 'success') {
-                $paymentUpdateData['settlement_time'] = $request->settlement_time ?? Carbon::now();
-            }
+                if (isset($request->transaction_time)) {
+                    $paymentUpdateData['transaction_time'] = $request->transaction_time;
+                }
 
-            // Update transaction_time if available
-            if (isset($request->transaction_time)) {
-                $paymentUpdateData['transaction_time'] = $request->transaction_time;
-            }
+                if (in_array($paymentStatus, ['settlement', 'capture'], true)) {
+                    $settlementTime = $request->settlement_time ?? $request->transaction_time ?? Carbon::now();
+                    $paymentUpdateData['settlement_time'] = $settlementTime;
+                    $paymentUpdateData['payment_date'] = $settlementTime;
+                }
 
-            $pembayaran->update($paymentUpdateData);
+                $pembayaran->update($paymentUpdateData);
+            });
 
             // Update Firebase
             $this->updateFirebaseBooking($booking->order_id, $bookingStatus, $booking->total_pembayaran);
 
-            // Jika pembayaran berhasil, kirim notifikasi atau email (opsional)
-            if ($status === 'success') {
+            if (in_array($paymentStatus, ['settlement', 'capture'], true)) {
                 $this->handleSuccessfulPayment($booking);
             }
 
             Log::info('Booking status updated successfully', [
                 'order_id' => $booking->order_id,
                 'booking_status' => $bookingStatus,
-                'payment_status' => $status,
-                'amount' => $booking->total_pembayaran
+                'payment_status' => $paymentStatus,
+                'amount' => $booking->total_pembayaran,
             ]);
 
         } catch (\Exception $e) {
             Log::error('Failed to update booking status: ' . $e->getMessage(), [
                 'order_id' => $booking->order_id,
-                'status' => $status,
-                'error' => $e->getMessage()
+                'status' => $paymentStatus,
+                'error' => $e->getMessage(),
             ]);
             throw $e;
         }
