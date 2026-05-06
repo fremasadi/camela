@@ -104,8 +104,12 @@ class BookingController extends Controller
             'data' => [
                 'tanggal' => $request->tanggal,
                 'total_menit' => $totalMenit,
-                'next_available' => $slots[0] ?? null,
-                'slots' => $slots,
+                'next_available' => $slots[0]['jam_mulai'] ?? null,
+                'slots' => array_map(static fn (array $slot) => [
+                    'jam_mulai' => $slot['jam_mulai'],
+                    'tersedia' => $slot['tersedia'],
+                    'sisa_pegawai' => $slot['sisa_pegawai'],
+                ], $slots),
             ]
         ]);
     }
