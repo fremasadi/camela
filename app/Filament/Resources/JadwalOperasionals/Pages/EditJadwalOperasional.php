@@ -13,4 +13,9 @@ class EditJadwalOperasional extends EditRecord
     {
         return [];
     }
+
+    protected function getRedirectUrl(): string
+    {
+        return static::$resource::getUrl('index');
+    }
 }
