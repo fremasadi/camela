@@ -22,6 +22,18 @@ use Kreait\Firebase\Factory;
 class BookingController extends Controller
 {
     private $firebaseDatabase = null;
+    private const PAYMENT_STATUS_PRIORITY = [
+        'pending' => 10,
+        'challenge' => 10,
+        'failed' => 20,
+        'cancelled' => 20,
+        'expired' => 20,
+        'capture' => 30,
+        'settlement' => 30,
+        'success' => 30,
+        'partial_refunded' => 40,
+        'refunded' => 50,
+    ];
 
     public function __construct()
     {
@@ -248,22 +260,8 @@ class BookingController extends Controller
                 ]);
             }
 
-            // Proses pembayaran menggunakan CoreApi
-            $paymentGatewayResponse = $this->processPayment(
-                $paymentType,
-                $totalPembayaran,
-                $orderId,
-                $user,
-                $request->items,
-                $bank,
-            );
-
-            if (isset($paymentGatewayResponse['error'])) {
-                DB::rollBack();
-                throw new \Exception($paymentGatewayResponse['error']);
-            }
-
-            // Create payment record
+            // Create payment record placeholder lebih dulu agar callback Midtrans
+            // tetap menemukan data meskipun webhook datang sangat cepat.
             $pembayaran = Pembayaran::create([
                 'booking_id' => $booking->id,
                 'order_id' => $orderId,
@@ -272,45 +270,10 @@ class BookingController extends Controller
                 'payment_type' => $paymentType,
                 'payment_gateway' => 'midtrans',
                 'payment_gateway_reference_id' => $orderId,
-                'payment_gateway_response' => json_encode($paymentGatewayResponse['response']),
-                'payment_date' => Carbon::now(),
                 'expired_at' => Carbon::now()->addHours(1),
-                'bank' => $paymentGatewayResponse['va_bank'],
-                'va_number' => $paymentGatewayResponse['va_number'],
-                'qr_url' => $paymentGatewayResponse['qr_string'],
-                'deeplink_url' => $paymentGatewayResponse['deeplink_redirect'],
             ]);
 
-            if ($this->firebaseDatabase) {
-                // Push notification to Firebase
-                $this->firebaseDatabase
-                    ->getReference('notifications/bookings')
-                    ->push([
-                        'order_id' => $orderId,
-                        'booking_id' => $booking->id,
-                        'user_name' => $user->name,
-                        'total_amount' => $totalPembayaran,
-                        'status' => 'pending',
-                        'timestamp' => Carbon::now()->timestamp,
-                    ]);
-            }
-
             DB::commit();
-
-            return response()->json([
-                'status' => true,
-                'message' => 'Booking created successfully',
-                'data' => [
-                    'booking_id' => $booking->id,
-                    'order_id' => $orderId,
-                    'total_harga' => $totalHarga,
-                    'total_pembayaran' => $totalPembayaran,
-                    'jenis_pembayaran' => $request->jenis_pembayaran,
-                    'booking' => $booking,
-                    'payment' => $pembayaran
-                ]
-            ], 200);
-
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Booking creation failed: ' . $e->getMessage());
@@ -319,6 +282,53 @@ class BookingController extends Controller
                 'message' => 'Error creating booking or payment: ' . $e->getMessage(),
             ], 500);
         }
+
+        $paymentGatewayResponse = $this->processPayment(
+            $paymentType,
+            $totalPembayaran,
+            $orderId,
+            $user,
+            $request->items,
+            $bank,
+        );
+
+        if (isset($paymentGatewayResponse['error'])) {
+            $this->markBookingPaymentFailed($booking->id, $pembayaran->id, $paymentGatewayResponse['error']);
+
+            return response()->json([
+                'status' => false,
+                'message' => 'Error creating booking or payment: ' . $paymentGatewayResponse['error'],
+            ], 500);
+        }
+
+        $pembayaran->update([
+            'payment_gateway_response' => $this->normalizeGatewayResponse($paymentGatewayResponse['response']),
+            'bank' => $paymentGatewayResponse['va_bank'],
+            'va_number' => $paymentGatewayResponse['va_number'],
+            'qr_url' => $paymentGatewayResponse['qr_string'],
+            'deeplink_url' => $paymentGatewayResponse['deeplink_redirect'],
+        ]);
+
+        $booking = Booking::query()->findOrFail($booking->id);
+        $pembayaran = Pembayaran::query()->findOrFail($pembayaran->id);
+
+        $this->dispatchAfterResponse(function () use ($orderId, $booking, $user, $totalPembayaran) {
+            $this->pushFirebaseBookingNotification($orderId, $booking->id, $user->name, $totalPembayaran, 'pending');
+        });
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Booking created successfully',
+            'data' => [
+                'booking_id' => $booking->id,
+                'order_id' => $orderId,
+                'total_harga' => $totalHarga,
+                'total_pembayaran' => $totalPembayaran,
+                'jenis_pembayaran' => $request->jenis_pembayaran,
+                'booking' => $booking,
+                'payment' => $pembayaran
+            ]
+        ], 200);
     }
 
     private function getJadwalOperasionalByTanggal(string $tanggal): ?JadwalOperasional
@@ -613,16 +623,32 @@ class BookingController extends Controller
     public function callback(Request $request)
     {
         try {
-            // Ambil raw input dari request
-            $serverKey = env('MIDTRANS_SERVER_KEY');
-            $hashed = hash("sha512", $request->order_id . $request->status_code . $request->gross_amount . $serverKey);
+            $payload = $request->all();
+            $orderId = (string) $request->input('order_id');
+            $statusCode = (string) $request->input('status_code');
+            $grossAmount = (string) $request->input('gross_amount');
+            $signatureKey = (string) $request->input('signature_key');
+            $serverKey = (string) env('MIDTRANS_SERVER_KEY');
+
+            if ($orderId === '' || $statusCode === '' || $grossAmount === '' || $signatureKey === '') {
+                Log::warning('Incomplete Midtrans callback payload', [
+                    'payload' => $payload,
+                ]);
+
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Incomplete callback payload',
+                ], 422);
+            }
+
+            $hashed = hash('sha512', $orderId . $statusCode . $grossAmount . $serverKey);
 
             // Verifikasi signature untuk keamanan
-            if ($hashed !== $request->signature_key) {
+            if (!hash_equals($hashed, $signatureKey)) {
                 Log::warning('Invalid signature key for booking callback', [
-                    'order_id' => $request->order_id,
-                    'signature_received' => $request->signature_key,
-                    'signature_calculated' => $hashed
+                    'order_id' => $orderId,
+                    'signature_received' => $signatureKey,
+                    'signature_calculated' => $hashed,
                 ]);
 
                 return response()->json([
@@ -631,86 +657,87 @@ class BookingController extends Controller
                 ], 400);
             }
 
-            // Cari booking berdasarkan order_id
-            $booking = Booking::where('order_id', $request->order_id)->first();
-
-            if (!$booking) {
-                Log::error('Booking not found for callback', ['order_id' => $request->order_id]);
-                return response()->json([
-                    'status' => false,
-                    'message' => 'Booking not found'
-                ], 404);
-            }
-
-            // Ambil payment record terkait
-            $pembayaran = $booking->pembayaran;
+            $pembayaran = Pembayaran::query()
+                ->with('booking')
+                ->where('order_id', $orderId)
+                ->first();
 
             if (!$pembayaran) {
-                Log::error('Payment record not found for booking', ['order_id' => $request->order_id]);
+                Log::error('Payment record not found for callback', ['order_id' => $orderId]);
                 return response()->json([
                     'status' => false,
                     'message' => 'Payment record not found'
                 ], 404);
             }
 
+            $booking = $pembayaran->booking;
+
+            if (!$booking) {
+                Log::error('Booking record not found for callback', ['order_id' => $orderId]);
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Booking not found'
+                ], 404);
+            }
+
             // Tentukan status berdasarkan transaction_status dari Midtrans
-            $transactionStatus = $request->transaction_status;
-            $fraudStatus = $request->fraud_status ?? null;
+            $transactionStatus = (string) $request->input('transaction_status');
+            $fraudStatus = $request->input('fraud_status');
 
             Log::info('Booking callback received', [
-                'order_id' => $request->order_id,
+                'order_id' => $orderId,
                 'transaction_status' => $transactionStatus,
                 'fraud_status' => $fraudStatus,
-                'payment_type' => $request->payment_type,
-                'gross_amount' => $request->gross_amount
+                'payment_type' => $request->input('payment_type'),
+                'gross_amount' => $grossAmount,
             ]);
 
             // Update status berdasarkan transaction_status
             switch ($transactionStatus) {
                 case 'capture':
                     if ($fraudStatus === 'challenge') {
-                        $this->updateBookingStatus($booking, $pembayaran, 'challenge', $request);
+                        $this->updateBookingStatus($orderId, 'challenge', $payload);
                     } elseif ($fraudStatus === 'accept' || $fraudStatus === null) {
-                        $this->updateBookingStatus($booking, $pembayaran, 'capture', $request);
+                        $this->updateBookingStatus($orderId, 'capture', $payload);
                     }
                     break;
 
                 case 'settlement':
-                    $this->updateBookingStatus($booking, $pembayaran, 'settlement', $request);
+                    $this->updateBookingStatus($orderId, 'settlement', $payload);
                     break;
 
                 case 'pending':
-                    $this->updateBookingStatus($booking, $pembayaran, 'pending', $request);
+                    $this->updateBookingStatus($orderId, 'pending', $payload);
                     break;
 
                 case 'deny':
-                    $this->updateBookingStatus($booking, $pembayaran, 'failed', $request);
+                    $this->updateBookingStatus($orderId, 'failed', $payload);
                     break;
 
                 case 'expire':
-                    $this->updateBookingStatus($booking, $pembayaran, 'expired', $request);
+                    $this->updateBookingStatus($orderId, 'expired', $payload);
                     break;
 
                 case 'cancel':
-                    $this->updateBookingStatus($booking, $pembayaran, 'cancelled', $request);
+                    $this->updateBookingStatus($orderId, 'cancelled', $payload);
                     break;
 
                 case 'refund':
-                    $this->updateBookingStatus($booking, $pembayaran, 'refunded', $request);
+                    $this->updateBookingStatus($orderId, 'refunded', $payload);
                     break;
 
                 case 'partial_refund':
-                    $this->updateBookingStatus($booking, $pembayaran, 'partial_refunded', $request);
+                    $this->updateBookingStatus($orderId, 'partial_refunded', $payload);
                     break;
 
                 case 'failure':
-                    $this->updateBookingStatus($booking, $pembayaran, 'failed', $request);
+                    $this->updateBookingStatus($orderId, 'failed', $payload);
                     break;
 
                 default:
                     Log::warning('Unknown transaction status for booking', [
-                        'order_id' => $request->order_id,
-                        'transaction_status' => $transactionStatus
+                        'order_id' => $orderId,
+                        'transaction_status' => $transactionStatus,
                     ]);
                     break;
             }
@@ -734,7 +761,7 @@ class BookingController extends Controller
         }
     }
 
-    private function updateBookingStatus($booking, $pembayaran, $paymentStatus, $request)
+    private function updateBookingStatus(string $orderId, string $paymentStatus, array $payload): void
     {
         try {
             $bookingStatusMap = [
@@ -751,7 +778,32 @@ class BookingController extends Controller
 
             $bookingStatus = $bookingStatusMap[$paymentStatus] ?? 'pending';
 
-            DB::transaction(function () use ($booking, $pembayaran, $bookingStatus, $paymentStatus, $request) {
+            $sideEffects = DB::transaction(function () use ($orderId, $bookingStatus, $paymentStatus, $payload) {
+                $pembayaran = Pembayaran::query()
+                    ->where('order_id', $orderId)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                $booking = Booking::query()
+                    ->whereKey($pembayaran->booking_id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                if ($this->shouldIgnorePaymentStatusTransition($pembayaran->transaction_status, $paymentStatus)) {
+                    Log::info('Ignoring stale booking callback status transition', [
+                        'order_id' => $orderId,
+                        'current_status' => $pembayaran->transaction_status,
+                        'incoming_status' => $paymentStatus,
+                    ]);
+
+                    return [
+                        'order_id' => $booking->order_id,
+                        'booking_status' => $booking->status,
+                        'payment_status' => $pembayaran->transaction_status,
+                        'total_pembayaran' => $booking->total_pembayaran,
+                    ];
+                }
+
                 $booking->update([
                     'status' => $bookingStatus,
                     'updated_at' => Carbon::now(),
@@ -759,47 +811,151 @@ class BookingController extends Controller
 
                 $paymentUpdateData = [
                     'transaction_status' => $paymentStatus,
-                    'payment_gateway_response' => $request->all(),
-                    'transaction_id' => $request->transaction_id ?? null,
-                    'fraud_status' => $request->fraud_status ?? null,
+                    'payment_gateway_response' => $payload,
+                    'midtrans_response' => $payload,
+                    'transaction_id' => $payload['transaction_id'] ?? null,
+                    'fraud_status' => $payload['fraud_status'] ?? null,
                     'updated_at' => Carbon::now(),
                 ];
 
-                if (isset($request->transaction_time)) {
-                    $paymentUpdateData['transaction_time'] = $request->transaction_time;
+                if (isset($payload['payment_type']) && empty($pembayaran->payment_type)) {
+                    $paymentUpdateData['payment_type'] = strtoupper((string) $payload['payment_type']);
+                }
+
+                if (isset($payload['transaction_time'])) {
+                    $paymentUpdateData['transaction_time'] = $payload['transaction_time'];
                 }
 
                 if (in_array($paymentStatus, ['settlement', 'capture'], true)) {
-                    $settlementTime = $request->settlement_time ?? $request->transaction_time ?? Carbon::now();
+                    $settlementTime = $payload['settlement_time'] ?? $payload['transaction_time'] ?? Carbon::now();
                     $paymentUpdateData['settlement_time'] = $settlementTime;
                     $paymentUpdateData['payment_date'] = $settlementTime;
                 }
 
                 $pembayaran->update($paymentUpdateData);
+
+                return [
+                    'order_id' => $booking->order_id,
+                    'booking_status' => $bookingStatus,
+                    'payment_status' => $paymentStatus,
+                    'total_pembayaran' => $booking->total_pembayaran,
+                ];
             });
 
-            // Update Firebase
-            $this->updateFirebaseBooking($booking->order_id, $bookingStatus, $booking->total_pembayaran);
+            $this->dispatchAfterResponse(function () use ($sideEffects) {
+                $this->updateFirebaseBooking(
+                    $sideEffects['order_id'],
+                    $sideEffects['booking_status'],
+                    $sideEffects['total_pembayaran'],
+                );
 
-            if (in_array($paymentStatus, ['settlement', 'capture'], true)) {
-                $this->handleSuccessfulPayment($booking);
-            }
+                if (in_array($sideEffects['payment_status'], ['settlement', 'capture'], true)) {
+                    $booking = Booking::query()->where('order_id', $sideEffects['order_id'])->first();
+
+                    if ($booking) {
+                        $this->handleSuccessfulPayment($booking);
+                    }
+                }
+            });
 
             Log::info('Booking status updated successfully', [
-                'order_id' => $booking->order_id,
-                'booking_status' => $bookingStatus,
-                'payment_status' => $paymentStatus,
-                'amount' => $booking->total_pembayaran,
+                'order_id' => $sideEffects['order_id'],
+                'booking_status' => $sideEffects['booking_status'],
+                'payment_status' => $sideEffects['payment_status'],
+                'amount' => $sideEffects['total_pembayaran'],
             ]);
 
         } catch (\Exception $e) {
             Log::error('Failed to update booking status: ' . $e->getMessage(), [
-                'order_id' => $booking->order_id,
+                'order_id' => $orderId,
                 'status' => $paymentStatus,
                 'error' => $e->getMessage(),
             ]);
             throw $e;
         }
+    }
+
+    private function shouldIgnorePaymentStatusTransition(?string $currentStatus, string $incomingStatus): bool
+    {
+        if (!$currentStatus) {
+            return false;
+        }
+
+        $currentPriority = self::PAYMENT_STATUS_PRIORITY[$currentStatus] ?? 0;
+        $incomingPriority = self::PAYMENT_STATUS_PRIORITY[$incomingStatus] ?? 0;
+
+        return $incomingPriority < $currentPriority;
+    }
+
+    private function normalizeGatewayResponse(mixed $response): ?array
+    {
+        if ($response === null) {
+            return null;
+        }
+
+        return json_decode(json_encode($response), true);
+    }
+
+    private function markBookingPaymentFailed(int $bookingId, int $paymentId, string $errorMessage): void
+    {
+        DB::transaction(function () use ($bookingId, $paymentId, $errorMessage) {
+            Booking::query()
+                ->whereKey($bookingId)
+                ->update([
+                    'status' => 'cancelled',
+                    'updated_at' => Carbon::now(),
+                ]);
+
+            $pembayaran = Pembayaran::query()->find($paymentId);
+
+            if ($pembayaran) {
+                $pembayaran->update([
+                    'transaction_status' => 'failed',
+                    'payment_gateway_response' => [
+                        'error' => $errorMessage,
+                    ],
+                    'midtrans_response' => [
+                        'error' => $errorMessage,
+                    ],
+                    'updated_at' => Carbon::now(),
+                ]);
+            }
+        });
+    }
+
+    private function pushFirebaseBookingNotification(
+        string $orderId,
+        int $bookingId,
+        string $userName,
+        float|int $totalAmount,
+        string $status
+    ): void {
+        if (!$this->firebaseDatabase) {
+            return;
+        }
+
+        try {
+            $this->firebaseDatabase
+                ->getReference('notifications/bookings')
+                ->push([
+                    'order_id' => $orderId,
+                    'booking_id' => $bookingId,
+                    'user_name' => $userName,
+                    'total_amount' => $totalAmount,
+                    'status' => $status,
+                    'timestamp' => Carbon::now()->timestamp,
+                ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to push Firebase booking notification: ' . $e->getMessage(), [
+                'order_id' => $orderId,
+                'booking_id' => $bookingId,
+            ]);
+        }
+    }
+
+    private function dispatchAfterResponse(callable $callback): void
+    {
+        app()->terminating($callback);
     }
 
     private function updateFirebaseBooking($orderId, $status, $amount)
