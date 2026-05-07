@@ -13,7 +13,6 @@ use Filament\Tables\Columns\Summarizers\Sum;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Table;
-use Filament\Actions\ViewAction;
 
 class BookingsTable
 {
@@ -86,10 +85,12 @@ class BookingsTable
                     }),
             ])
             ->recordActions([
-                ViewAction::make()
+                Action::make('detail')
                     ->label('Detail')
                     ->modalHeading('Detail Booking')
                     ->modalWidth('4xl')
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('Tutup')
                     ->modalContent(function ($record) {
                         return view('filament.bookings.detail-modal', [
                             'booking' => $record,
