@@ -29,7 +29,7 @@ class BookingForm
                     ->required()
                     ->numeric(),
                 Select::make('jenis_pembayaran')
-                    ->options(['dp' => 'Dp', 'lunas' => 'Lunas'])
+                    ->options([ 'lunas' => 'Lunas'])
                     ->required(),
                 TextInput::make('total_pembayaran')
                     ->required()

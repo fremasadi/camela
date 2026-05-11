@@ -44,7 +44,7 @@ class BookingsTable
                     ->summarize([
                         Sum::make()
                             ->label('Total Pendapatan')
-                            ->query(fn(QueryBuilder $query): QueryBuilder => $query->where('status', 'confirmed'))
+->query(fn(QueryBuilder $query): QueryBuilder => $query->whereIn('status', ['confirmed', 'selesai']))
                             ->numeric(thousandsSeparator: '.')
                             ->prefix('Rp '),
                     ]),
