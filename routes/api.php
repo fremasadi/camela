@@ -29,8 +29,7 @@ Route::middleware('auth:sanctum')
 });
 
 // 🔹 LAYANAN ROUTES
-Route::middleware('auth:sanctum')
-    ->prefix('layanan')
+Route::prefix('layanan')
     ->group(function () {
     Route::get('/', [LayananController::class, 'index']);
     Route::get('/{id}', [LayananController::class, 'show']);
