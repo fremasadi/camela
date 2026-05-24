@@ -22,8 +22,7 @@ Route::prefix('auth')->group(function () {
 });
 
 // 🔹 KATEGORI LAYANAN ROUTES
-Route::middleware('auth:sanctum')
-    ->prefix('kategori-layanan')
+Route::prefix('kategori-layanan')
     ->group(function () {
         Route::get('/', [KategoriLayananController::class, 'index']);
 });
