@@ -527,15 +527,24 @@ class BookingController extends Controller
         }
     }
 
-    public function history()
+    public function history(Request $request)
     {
         try {
+            $validated = $request->validate([
+                'search' => 'nullable|string|max:255',
+            ]);
+
             $bookings = Booking::with([
                 'details.layanan',
                 'pembayaran',
                 'userVoucher.voucher',
             ])
                 ->where('user_id', Auth::id())
+                ->when($validated['search'] ?? null, function ($query, string $search) {
+                    $query->whereHas('details.layanan', function ($query) use ($search) {
+                        $query->where('name', 'like', '%'.$search.'%');
+                    });
+                })
                 ->orderBy('created_at', 'desc')
                 ->get();
 
