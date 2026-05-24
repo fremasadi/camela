@@ -19,6 +19,7 @@ class DatabaseSeeder extends Seeder
             PegawaiSeeder::class,
             JadwalOperasionalSeeder::class,
             VoucherSeeder::class,
+            TestingCustomerSeeder::class,
         ]);
 
     }
