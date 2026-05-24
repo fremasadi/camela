@@ -24,6 +24,11 @@ use Kreait\Firebase\Factory;
 class BookingController extends Controller
 {
     private $firebaseDatabase = null;
+    private const BOOKING_STATUSES_MENGGUNAKAN_SLOT = [
+        'pending',
+        'confirmed',
+    ];
+
     private const PAYMENT_STATUS_PRIORITY = [
         'pending' => 10,
         'challenge' => 10,
@@ -98,6 +103,11 @@ class BookingController extends Controller
 
             $jamMulai = $current->format('H:i');
             $jamSelesai = $current->copy()->addMinutes($totalMenit)->format('H:i');
+
+            if ($this->jamBookingSudahDipakai($request->tanggal, $jamMulai)) {
+                $current->addMinutes($interval);
+                continue;
+            }
 
             $jumlahPegawaiTersedia = Pegawai::jumlahTersedia($request->tanggal, $jamMulai, $jamSelesai);
 
@@ -252,6 +262,15 @@ class BookingController extends Controller
             Pegawai::where('status', 'aktif')
                 ->lockForUpdate()
                 ->get();
+
+            if ($this->jamBookingSudahDipakai($request->tanggal_booking, $request->jam_booking, true)) {
+                DB::rollBack();
+
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Jam booking tersebut sudah terisi. Silakan pilih jam lain.',
+                ], 422);
+            }
 
             $pegawai = Pegawai::tersedia($request->tanggal_booking, $request->jam_booking, $jamSelesai);
 
@@ -411,6 +430,20 @@ class BookingController extends Controller
                 ->whereNull('hari')
                 ->where('status', 'buka')
                 ->first();
+    }
+
+    private function jamBookingSudahDipakai(string $tanggal, string $jamBooking, bool $lock = false): bool
+    {
+        $query = Booking::query()
+            ->whereDate('tanggal_booking', $tanggal)
+            ->whereTime('jam_booking', $jamBooking)
+            ->whereIn('status', self::BOOKING_STATUSES_MENGGUNAKAN_SLOT);
+
+        if ($lock) {
+            $query->lockForUpdate();
+        }
+
+        return $query->exists();
     }
 
     private function processPayment($paymentType, $totalAmount, $orderId, $user, $items, $bank = null, float|int $discountAmount = 0)
