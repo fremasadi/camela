@@ -18,6 +18,7 @@ class DatabaseSeeder extends Seeder
             KategoriDanLayananSeeder::class,
             PegawaiSeeder::class,
             JadwalOperasionalSeeder::class,
+            VoucherSeeder::class,
         ]);
 
     }
