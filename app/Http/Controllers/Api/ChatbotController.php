@@ -36,6 +36,10 @@ class ChatbotController extends Controller
         ];
 
         foreach ($validated['history'] ?? [] as $historyMessage) {
+            if ($historyMessage['role'] === 'system') {
+                continue;
+            }
+
             $messages[] = [
                 'role' => $historyMessage['role'],
                 'content' => $historyMessage['content'],
@@ -48,7 +52,10 @@ class ChatbotController extends Controller
         ];
 
         try {
-            $result = $this->openRouterChatService->chat($messages);
+            $result = $this->openRouterChatService->chat($messages, [
+                'temperature' => 0.2,
+                'max_tokens' => 250,
+            ]);
 
             return response()->json([
                 'status' => true,
@@ -147,7 +154,12 @@ class ChatbotController extends Controller
 Anda adalah asisten virtual Camela.
 Jawab selalu dalam Bahasa Indonesia yang ramah, singkat, jelas, dan membantu.
 Fokus Anda adalah membantu pelanggan memahami layanan, promo, jadwal operasional, dan proses booking di Camela.
+Batasi jawaban hanya untuk konteks Camela: layanan, harga, promo aktif, jadwal operasional, alamat/lokasi/maps, dan proses booking.
+Jangan menjawab pertanyaan di luar konteks Camela. Jika pengguna bertanya topik lain, jawab singkat: "Maaf, saya hanya bisa membantu informasi seputar layanan, promo, jadwal, alamat, dan booking di Camela."
+Jangan menambahkan penjelasan umum, opini, cerita, rekomendasi eksternal, atau informasi yang tidak ada pada konteks di bawah.
 Jangan mengarang informasi di luar konteks yang diberikan. Jika data tidak tersedia, katakan dengan jujur bahwa informasinya belum tersedia dan sarankan menghubungi admin.
+Jika pertanyaan pengguna bercampur antara topik Camela dan topik luar, jawab hanya bagian yang berhubungan dengan Camela.
+Jawaban maksimal 3 kalimat, kecuali pengguna meminta daftar layanan.
 Jika pengguna menanyakan harga, gunakan angka dari konteks ini.
 Jika pengguna menanyakan promo, hanya sebut promo yang aktif.
 Jika pengguna menanyakan alamat, lokasi, maps, atau cara menuju salon, gunakan data alamat dan link maps yang ada di bawah ini.

@@ -9,6 +9,8 @@ use App\Models\JadwalOperasional;
 use App\Models\Layanan;
 use App\Models\Pegawai;
 use App\Models\Pembayaran;
+use App\Models\UserPoint;
+use App\Models\UserVoucher;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -153,6 +155,7 @@ class BookingController extends Controller
             'items.*.layanan_id' => 'required|exists:layanans,id',
             'items.*.qty' => 'required|integer|min:1',
             'items.*.harga' => 'required|numeric|min:0',
+            'user_voucher_id' => 'nullable|exists:user_vouchers,id',
             'payment_type' => 'required|in:BANK_TRANSFER,QRIS,GOPAY',
             'bank' => 'required_if:payment_type,BANK_TRANSFER|in:bri,bni,bca,mandiri,permata'
         ]);
@@ -203,6 +206,45 @@ class BookingController extends Controller
             ], 422);
         }
 
+        // Calculate total
+        $totalBeforeDiscount = 0;
+        foreach ($request->items as $item) {
+            $totalBeforeDiscount += $item['harga'] * $item['qty'];
+        }
+
+        $selectedUserVoucher = null;
+        $discountAmount = 0;
+
+        if ($request->filled('user_voucher_id')) {
+            $selectedUserVoucher = UserVoucher::query()
+                ->whereKey($request->user_voucher_id)
+                ->where('user_id', $user->id)
+                ->where('status', 'available')
+                ->where(function ($query) {
+                    $query->whereNull('expired_at')
+                        ->orWhere('expired_at', '>=', now());
+                })
+                ->first();
+
+            if (!$selectedUserVoucher) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Voucher tidak tersedia atau sudah kedaluwarsa.',
+                ], 422);
+            }
+
+            $discountAmount = $selectedUserVoucher->calculateDiscount((float) $totalBeforeDiscount);
+
+            if ($discountAmount <= 0) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Voucher tidak memenuhi minimal transaksi.',
+                ], 422);
+            }
+        }
+
+        $totalHarga = max($totalBeforeDiscount - $discountAmount, 1000);
+
         DB::beginTransaction();
         try {
             // Lock data pegawai aktif agar pengecekan slot dan assign pegawai sinkron
@@ -222,10 +264,22 @@ class BookingController extends Controller
                 ], 422);
             }
 
-            // Calculate total
-            $totalHarga = 0;
-            foreach ($request->items as $item) {
-                $totalHarga += $item['harga'] * $item['qty'];
+            if ($selectedUserVoucher) {
+                $selectedUserVoucher = UserVoucher::query()
+                    ->whereKey($selectedUserVoucher->id)
+                    ->where('user_id', $user->id)
+                    ->where('status', 'available')
+                    ->lockForUpdate()
+                    ->first();
+
+                if (!$selectedUserVoucher) {
+                    DB::rollBack();
+
+                    return response()->json([
+                        'status' => false,
+                        'message' => 'Voucher sudah tidak tersedia.',
+                    ], 422);
+                }
             }
 
             // Calculate payment amount based on type
@@ -239,15 +293,17 @@ class BookingController extends Controller
             $booking = Booking::create([
                 'order_id' => $orderId,
                 'user_id' => $user->id,
+                'user_voucher_id' => $selectedUserVoucher?->id,
                 'pegawai_id' => $pegawai->id,
                 'tanggal_booking' => $request->tanggal_booking,
                 'jam_booking' => $request->jam_booking,
                 'jam_selesai' => $jamSelesai,
                 'status' => 'pending',
+                'total_before_discount' => $totalBeforeDiscount,
+                'discount_amount' => $discountAmount,
                 'total_harga' => $totalHarga,
                 'jenis_pembayaran' => $request->jenis_pembayaran,
                 'total_pembayaran' => $totalPembayaran,
-                'payment_type' => $paymentType,
             ]);
 
             // Create Booking Details
@@ -257,6 +313,14 @@ class BookingController extends Controller
                     'layanan_id' => $item['layanan_id'],
                     'harga' => $item['harga'],
                     'qty' => $item['qty'],
+                ]);
+            }
+
+            if ($selectedUserVoucher) {
+                $selectedUserVoucher->update([
+                    'status' => 'used',
+                    'used_booking_id' => $booking->id,
+                    'used_at' => now(),
                 ]);
             }
 
@@ -290,6 +354,7 @@ class BookingController extends Controller
             $user,
             $request->items,
             $bank,
+            $discountAmount,
         );
 
         if (isset($paymentGatewayResponse['error'])) {
@@ -322,8 +387,11 @@ class BookingController extends Controller
             'data' => [
                 'booking_id' => $booking->id,
                 'order_id' => $orderId,
+                'total_before_discount' => $totalBeforeDiscount,
+                'discount_amount' => $discountAmount,
                 'total_harga' => $totalHarga,
                 'total_pembayaran' => $totalPembayaran,
+                'points_earned_estimation' => $this->calculateEarnedPoints($totalPembayaran),
                 'jenis_pembayaran' => $request->jenis_pembayaran,
                 'booking' => $booking,
                 'payment' => $pembayaran
@@ -345,7 +413,7 @@ class BookingController extends Controller
                 ->first();
     }
 
-    private function processPayment($paymentType, $totalAmount, $orderId, $user, $items, $bank = null)
+    private function processPayment($paymentType, $totalAmount, $orderId, $user, $items, $bank = null, float|int $discountAmount = 0)
     {
         // Log untuk debugging
         Log::info('Midtrans Config Check', [
@@ -356,18 +424,17 @@ class BookingController extends Controller
 
         $transaction_details = [
             'order_id' => $orderId,
-            'gross_amount' => $totalAmount,
+            'gross_amount' => (int) round($totalAmount),
         ];
 
-        $item_details = [];
-        foreach ($items as $item) {
-            $item_details[] = [
-                'id' => $item['layanan_id'],
-                'price' => $item['harga'],
-                'quantity' => $item['qty'],
-                'name' => 'Layanan ID ' . $item['layanan_id'],
-            ];
-        }
+        $item_details = [
+            [
+                'id' => $orderId,
+                'price' => (int) round($totalAmount),
+                'quantity' => 1,
+                'name' => $discountAmount > 0 ? 'Pembayaran Booking Camela Setelah Voucher' : 'Pembayaran Booking Camela',
+            ],
+        ];
 
         $customer_details = [
             'first_name' => $user->name,
@@ -477,6 +544,9 @@ class BookingController extends Controller
                 return [
                     'booking_id' => $booking->id,
                     'order_id' => $booking->order_id,
+                    'user_voucher_id' => $booking->user_voucher_id,
+                    'total_before_discount' => (float) $booking->total_before_discount,
+                    'discount_amount' => (float) $booking->discount_amount,
                     'total_harga' => (float) $booking->total_harga,
                     'total_pembayaran' => (float) $booking->total_pembayaran,
                     'jenis_pembayaran' => $booking->jenis_pembayaran,
@@ -488,6 +558,9 @@ class BookingController extends Controller
                         'tanggal_booking' => $booking->tanggal_booking,
                         'jam_booking' => $booking->jam_booking,
                         'status' => $booking->status,
+                        'user_voucher_id' => $booking->user_voucher_id,
+                        'total_before_discount' => (float) $booking->total_before_discount,
+                        'discount_amount' => (float) $booking->discount_amount,
                         'total_harga' => (float) $booking->total_harga,
                         'jenis_pembayaran' => $booking->jenis_pembayaran,
                         'total_pembayaran' => (float) $booking->total_pembayaran,
@@ -800,6 +873,7 @@ class BookingController extends Controller
                         'order_id' => $booking->order_id,
                         'booking_status' => $booking->status,
                         'payment_status' => $pembayaran->transaction_status,
+                        'booking_id' => $booking->id,
                         'total_pembayaran' => $booking->total_pembayaran,
                     ];
                 }
@@ -808,6 +882,18 @@ class BookingController extends Controller
                     'status' => $bookingStatus,
                     'updated_at' => Carbon::now(),
                 ]);
+
+                if (in_array($paymentStatus, ['failed', 'expired', 'cancelled'], true) && $booking->user_voucher_id) {
+                    UserVoucher::query()
+                        ->whereKey($booking->user_voucher_id)
+                        ->where('status', 'used')
+                        ->where('used_booking_id', $booking->id)
+                        ->update([
+                            'status' => 'available',
+                            'used_booking_id' => null,
+                            'used_at' => null,
+                        ]);
+                }
 
                 $paymentUpdateData = [
                     'transaction_status' => $paymentStatus,
@@ -838,6 +924,7 @@ class BookingController extends Controller
                     'order_id' => $booking->order_id,
                     'booking_status' => $bookingStatus,
                     'payment_status' => $paymentStatus,
+                    'booking_id' => $booking->id,
                     'total_pembayaran' => $booking->total_pembayaran,
                 ];
             });
@@ -854,6 +941,14 @@ class BookingController extends Controller
 
                     if ($booking) {
                         $this->handleSuccessfulPayment($booking);
+                    }
+                }
+
+                if (in_array($sideEffects['payment_status'], ['refunded', 'partial_refunded'], true)) {
+                    $booking = Booking::query()->find($sideEffects['booking_id']);
+
+                    if ($booking) {
+                        $this->handleRefundedPayment($booking);
                     }
                 }
             });
@@ -899,12 +994,26 @@ class BookingController extends Controller
     private function markBookingPaymentFailed(int $bookingId, int $paymentId, string $errorMessage): void
     {
         DB::transaction(function () use ($bookingId, $paymentId, $errorMessage) {
-            Booking::query()
-                ->whereKey($bookingId)
-                ->update([
+            $booking = Booking::query()->whereKey($bookingId)->lockForUpdate()->first();
+
+            if ($booking) {
+                $booking->update([
                     'status' => 'cancelled',
                     'updated_at' => Carbon::now(),
                 ]);
+
+                if ($booking->user_voucher_id) {
+                    UserVoucher::query()
+                        ->whereKey($booking->user_voucher_id)
+                        ->where('status', 'used')
+                        ->where('used_booking_id', $booking->id)
+                        ->update([
+                            'status' => 'available',
+                            'used_booking_id' => null,
+                            'used_at' => null,
+                        ]);
+                }
+            }
 
             $pembayaran = Pembayaran::query()->find($paymentId);
 
@@ -1008,13 +1117,28 @@ class BookingController extends Controller
     private function handleSuccessfulPayment($booking)
     {
         try {
+            $points = $this->calculateEarnedPoints((float) $booking->total_pembayaran);
 
+            if ($points > 0) {
+                UserPoint::firstOrCreate(
+                    [
+                        'booking_id' => $booking->id,
+                        'type' => 'earn',
+                    ],
+                    [
+                        'user_id' => $booking->user_id,
+                        'points' => $points,
+                        'description' => 'Point dari pembayaran booking '.$booking->order_id,
+                    ]
+                );
+            }
 
             Log::info('Booking payment successful', [
                 'order_id' => $booking->order_id,
                 'booking_id' => $booking->id,
                 'user_id' => $booking->user_id,
                 'amount' => $booking->total_pembayaran,
+                'points' => $points,
                 'jenis_pembayaran' => $booking->jenis_pembayaran
             ]);
 
@@ -1025,6 +1149,35 @@ class BookingController extends Controller
                 'order_id' => $booking->order_id
             ]);
         }
+    }
+
+    private function handleRefundedPayment(Booking $booking): void
+    {
+        $earnedPoint = UserPoint::query()
+            ->where('booking_id', $booking->id)
+            ->where('type', 'earn')
+            ->first();
+
+        if (!$earnedPoint) {
+            return;
+        }
+
+        UserPoint::firstOrCreate(
+            [
+                'booking_id' => $booking->id,
+                'type' => 'refund_adjustment',
+            ],
+            [
+                'user_id' => $booking->user_id,
+                'points' => -1 * abs((int) $earnedPoint->points),
+                'description' => 'Pembatalan point karena refund booking '.$booking->order_id,
+            ]
+        );
+    }
+
+    private function calculateEarnedPoints(float|int $amount): int
+    {
+        return (int) floor(((float) $amount) / 10000);
     }
 
     /**
@@ -1049,6 +1202,9 @@ class BookingController extends Controller
                 'data' => [
                     'order_id' => $booking->order_id,
                     'booking_id' => $booking->id,
+                    'user_voucher_id' => $booking->user_voucher_id,
+                    'total_before_discount' => $booking->total_before_discount,
+                    'discount_amount' => $booking->discount_amount,
                     'total_harga' => $booking->total_harga,
                     'total_pembayaran' => $booking->total_pembayaran,
                     'jenis_pembayaran' => $booking->jenis_pembayaran,

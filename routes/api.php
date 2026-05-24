@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\ChatbotController;
 use App\Http\Controllers\Api\KategoriLayananController;
 use App\Http\Controllers\Api\LayananController;
 use App\Http\Controllers\Api\BookingController;
+use App\Http\Controllers\Api\VoucherController;
 
 Route::get('/user', function (Request $request) {
     return $request->user();
@@ -46,6 +47,16 @@ Route::middleware('auth:sanctum')
         Route::get('/check/{orderId}', [BookingController::class, 'checkStatus']);
         Route::get('/{id}', [BookingController::class, 'show']);
 });
+
+Route::middleware('auth:sanctum')
+    ->group(function () {
+        Route::get('/points', [VoucherController::class, 'points']);
+        Route::get('/points/history', [VoucherController::class, 'pointHistory']);
+
+        Route::get('/vouchers', [VoucherController::class, 'vouchers']);
+        Route::post('/vouchers/{voucher}/redeem', [VoucherController::class, 'redeem']);
+        Route::get('/my-vouchers', [VoucherController::class, 'myVouchers']);
+    });
 
 // MIDTRANS CALLBACK (without auth)
 Route::post('/payment/callback', [BookingController::class, 'callback']);
