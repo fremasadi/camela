@@ -532,7 +532,8 @@ class BookingController extends Controller
         try {
             $bookings = Booking::with([
                 'details.layanan',
-                'pembayaran'
+                'pembayaran',
+                'userVoucher.voucher',
             ])
                 ->where('user_id', Auth::id())
                 ->orderBy('created_at', 'desc')
@@ -540,14 +541,25 @@ class BookingController extends Controller
 
             $formatted = $bookings->map(function ($booking) {
                 $payment = $booking->pembayaran;
+                $totalHarga = (float) $booking->total_harga;
+                $totalBeforeDiscount = (float) ($booking->total_before_discount ?? $booking->total_harga);
+                $discountAmount = (float) ($booking->discount_amount ?? 0);
+                $userVoucher = $booking->userVoucher;
 
                 return [
                     'booking_id' => $booking->id,
                     'order_id' => $booking->order_id,
                     'user_voucher_id' => $booking->user_voucher_id,
-                    'total_before_discount' => (float) $booking->total_before_discount,
-                    'discount_amount' => (float) $booking->discount_amount,
-                    'total_harga' => (float) $booking->total_harga,
+                    'voucher' => $userVoucher ? [
+                        'id' => $userVoucher->id,
+                        'code' => $userVoucher->code,
+                        'name' => $userVoucher->voucher?->name,
+                        'discount_type' => $userVoucher->discount_type,
+                        'discount_value' => (float) $userVoucher->discount_value,
+                    ] : null,
+                    'total_before_discount' => $totalBeforeDiscount,
+                    'discount_amount' => $discountAmount,
+                    'total_harga' => $totalHarga,
                     'total_pembayaran' => (float) $booking->total_pembayaran,
                     'jenis_pembayaran' => $booking->jenis_pembayaran,
 
@@ -559,9 +571,9 @@ class BookingController extends Controller
                         'jam_booking' => $booking->jam_booking,
                         'status' => $booking->status,
                         'user_voucher_id' => $booking->user_voucher_id,
-                        'total_before_discount' => (float) $booking->total_before_discount,
-                        'discount_amount' => (float) $booking->discount_amount,
-                        'total_harga' => (float) $booking->total_harga,
+                        'total_before_discount' => $totalBeforeDiscount,
+                        'discount_amount' => $discountAmount,
+                        'total_harga' => $totalHarga,
                         'jenis_pembayaran' => $booking->jenis_pembayaran,
                         'total_pembayaran' => (float) $booking->total_pembayaran,
                         'created_at' => $booking->created_at,
@@ -620,6 +632,11 @@ class BookingController extends Controller
             ]);
 
         } catch (\Exception $e) {
+            Log::error('Failed to get booking history', [
+                'user_id' => Auth::id(),
+                'message' => $e->getMessage(),
+            ]);
+
             return response()->json([
                 'status' => false,
                 'message' => 'Failed to get history: ' . $e->getMessage(),
